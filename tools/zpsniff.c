@@ -105,6 +105,8 @@ int main(int argc, char **argv)
     const char *cmd = NULL, *dev = NULL, *in_path = NULL, *out_path = NULL;
     const char *hex = NULL;
     uint32_t tag = ZP_FRAME_TAG;
+    uint32_t cmdid = 0x06;
+    uint8_t rspcmd = 0;
     int tmo = 400, i, keep_sync = 0;
     uint8_t payload[ZP_MAX_PAYLOAD], reply[ZP_MAX_PAYLOAD];
     size_t plen = 0, rlen = 0;
@@ -122,6 +124,8 @@ int main(int argc, char **argv)
         int has_next = (i + 1 < argc);
         if (!strcmp(a, "--dev") && has_next)
             dev = argv[++i];
+        else if (!strcmp(a, "--cmd") && has_next)
+            cmdid = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--tag") && has_next)
             tag = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--tmo") && has_next)
@@ -197,26 +201,29 @@ int main(int argc, char **argv)
     c.timeout_ms = tmo;
 
     if (!strcmp(cmd, "ping")) {
-        int r = zp_xfer(&c, payload, plen, reply, sizeof(reply), &rlen);
+        int r = zp_xfer(&c, payload, plen, (uint8_t)cmdid, &rspcmd, reply,
+                        sizeof(reply), &rlen);
         if (r != ZP_OK) {
             printf("no reply: %s\n", zp_strerror((uint32_t)r));
             rc = 1;
         } else {
-            printf("reply %zu byte(s)\n", rlen);
+            printf("reply cmd=0x%02x, %zu payload byte(s)\n", rspcmd, rlen);
             hexdump(stdout, reply, rlen);
         }
     } else if (!strcmp(cmd, "send")) {
-        int r = zp_send(&c, payload, plen);
-        printf("sent %zu payload byte(s) as a %zu byte frame: %s\n", plen,
-               plen + ZP_HEADER_SIZE, zp_strerror((uint32_t)r));
+        int r = zp_send(&c, payload, plen, (uint8_t)cmdid);
+        printf("sent cmd=0x%02x, %zu payload byte(s), status %s\n", cmdid,
+               plen,
+               zp_strerror((uint32_t)r));
         rc = r != ZP_OK;
     } else if (!strcmp(cmd, "xfer")) {
-        int r = zp_xfer(&c, payload, plen, reply, sizeof(reply), &rlen);
+        int r = zp_xfer(&c, payload, plen, (uint8_t)cmdid, &rspcmd, reply,
+                        sizeof(reply), &rlen);
         if (r != ZP_OK) {
             printf("no reply: %s\n", zp_strerror((uint32_t)r));
             rc = 1;
         } else {
-            printf("reply %zu byte(s)\n", rlen);
+            printf("reply cmd=0x%02x, %zu payload byte(s)\n", rspcmd, rlen);
             hexdump(stdout, reply, rlen);
             if (out_path) {
                 FILE *f = fopen(out_path, "wb");

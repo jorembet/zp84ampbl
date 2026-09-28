@@ -66,6 +66,66 @@ int main(void)
     n = zp_frame_pack(payload, 59, ZP_FRAME_TAG, frame, sizeof(frame));
     check("59 byte payload frames at 64 (one report)", n == 64);
 
+    {
+        static const uint8_t v1[] = "123456789";
+        check("CRC-16/MODBUS check value for \"123456789\" is 0x4B37",
+              zp_crc16_modbus(v1, 9) == 0x4B37);
+        check("CRC-16/MODBUS of empty input is 0xFFFF",
+              zp_crc16_modbus(v1, 0) == 0xFFFF);
+        {
+            static const uint8_t v2[] = {0x00};
+            check("CRC-16/MODBUS of 0x00 is 0x40BF",
+                  zp_crc16_modbus(v2, 1) == 0x40BF);
+        }
+        {
+            static const uint8_t v3[] = {0x01, 0x02, 0x03, 0x04};
+            check("CRC changes with input",
+                  zp_crc16_modbus(v3, 4) != zp_crc16_modbus(v3, 3));
+        }
+    }
+
+    {
+        uint8_t inner[128], out2[128], cmd_out = 0;
+        size_t ilen, plen2 = 0;
+
+        for (i = 0; i < 16; i++)
+            payload[i] = (uint8_t)(0xF0 + i);
+        ilen = zp_inner_pack(payload, 16, 0x06, inner, sizeof(inner));
+        check("inner frame total is payload + 5", ilen == 16 + 5);
+        check("inner byte 0 is 0x80", inner[0] == 0x80);
+        check("inner byte 1 is payload + 3", inner[1] == 16 + 3);
+        check("inner byte 2 is the command", inner[2] == 0x06);
+        check("inner payload follows the 3 byte header",
+              memcmp(inner + 3, payload, 16) == 0);
+        {
+            uint16_t want = zp_crc16_modbus(inner, 16 + 3);
+            check("inner CRC high byte", inner[16 + 3] == (uint8_t)(want >> 8));
+            check("inner CRC low byte", inner[16 + 4] == (uint8_t)(want & 0xFF));
+        }
+        check("inner round trip",
+              zp_inner_unpack(inner, ilen, &cmd_out, out2, sizeof(out2),
+                              &plen2) == ZP_OK);
+        check("inner round trip length", plen2 == 16);
+        check("inner round trip command", cmd_out == 0x06);
+        check("inner round trip payload", memcmp(out2, payload, 16) == 0);
+
+        inner[10] ^= 0x01;
+        check("corrupt payload fails CRC",
+              zp_inner_unpack(inner, ilen, &cmd_out, out2, sizeof(out2),
+                              &plen2) == ZP_ERR_CRC);
+        inner[10] ^= 0x01;
+
+        check("oversized destination rejected",
+              zp_inner_unpack(inner, ilen, &cmd_out, out2, 4, &plen2) ==
+                  ZP_ERR_OVERFLOW);
+        check("inner header 0x80 required",
+              zp_inner_unpack((const uint8_t *)"\x81\x05\x06", 5, &cmd_out,
+                              out2, sizeof(out2), &plen2) == ZP_ERR_SYNC);
+        check("0xFF length sentinel rejected",
+              zp_inner_unpack((const uint8_t *)"\x80\xff\x06", 5, &cmd_out,
+                              out2, sizeof(out2), &plen2) == ZP_ERR_OVERFLOW);
+    }
+
     printf("\n%d checks, %d failure(s)\n", checks, failures);
     return failures ? 1 : 0;
 }

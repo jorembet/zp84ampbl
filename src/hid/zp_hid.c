@@ -107,6 +107,96 @@ int zp_frame_unpack(const uint8_t *frame, size_t avail, uint8_t *payload,
     return ZP_OK;
 }
 
+/* CRC-16/MODBUS: poly 0x8005 reflected (0xA001), init 0xFFFF,
+   refin/refout true, xorout 0. Check value for "123456789" is 0x4B37. */
+uint16_t zp_crc16_modbus(const uint8_t *buf, size_t len)
+{
+    uint16_t crc = 0xFFFF;
+    size_t i;
+    int b;
+
+    for (i = 0; i < len; i++) {
+        crc ^= buf[i];
+        for (b = 0; b < 8; b++) {
+            if (crc & 1)
+                crc = (uint16_t)((crc >> 1) ^ 0xA001);
+            else
+                crc = (uint16_t)(crc >> 1);
+        }
+    }
+    return crc;
+}
+
+size_t zp_inner_pack(const uint8_t *payload, size_t len, uint8_t cmd,
+                     uint8_t *out, size_t out_cap)
+{
+    uint16_t crc;
+    size_t n;
+
+    if (out_cap < len + ZP_INNER_OVERHEAD)
+        return 0;
+    out[0] = 0x80;
+    if (len >= ZP_INNER_LEN_MAX)
+        out[1] = 0xFF;
+    else
+        out[1] = (uint8_t)(len + ZP_INNER_HDR);
+    out[2] = cmd;
+    if (len)
+        memcpy(out + ZP_INNER_HDR, payload, len);
+    n = len + ZP_INNER_HDR;
+    crc = zp_crc16_modbus(out, n);
+    out[n] = (uint8_t)(crc >> 8);
+    out[n + 1] = (uint8_t)(crc & 0xFF);
+    return n + ZP_INNER_CRC;
+}
+
+int zp_inner_unpack(const uint8_t *in, size_t avail, uint8_t *cmd,
+                    uint8_t *payload, size_t out_cap, size_t *payload_len)
+{
+    size_t n;
+
+    if (avail < ZP_INNER_OVERHEAD) {
+        *payload_len = 0;
+        return ZP_ERR_SHORT;
+    }
+    if (in[0] != 0x80) {
+        *payload_len = 0;
+        return ZP_ERR_SYNC;
+    }
+    if (in[1] == 0xFF) {
+        *payload_len = 0;
+        return ZP_ERR_OVERFLOW;
+    }
+    n = (size_t)in[1];
+    if (n < ZP_INNER_HDR) {
+        *payload_len = 0;
+        return ZP_ERR_SHORT;
+    }
+    if (avail < n + ZP_INNER_CRC) {
+        *payload_len = 0;
+        return ZP_ERR_SHORT;
+    }
+    {
+        uint16_t want = zp_crc16_modbus(in, n);
+        uint16_t got = (uint16_t)((in[n] << 8) | in[n + 1]);
+        if (want != got) {
+            *payload_len = 0;
+            return ZP_ERR_CRC;
+        }
+    }
+    if (cmd)
+        *cmd = in[2];
+    n -= ZP_INNER_HDR;
+    if (payload && n > out_cap) {
+        *payload_len = 0;
+        return ZP_ERR_OVERFLOW;
+    }
+    if (n && payload)
+        memcpy(payload, in + ZP_INNER_HDR, n);
+    *payload_len = n;
+    return ZP_OK;
+}
+
 int zp_write_report(zp_conn *c, const uint8_t *report)
 {
     ssize_t n = write(c->fd, report, ZP_REPORT_SIZE);
@@ -170,18 +260,24 @@ int zp_drain(zp_conn *c)
     return drained;
 }
 
-int zp_send(zp_conn *c, const uint8_t *payload, size_t len)
+int zp_send(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd)
 {
-    uint8_t frame[ZP_MAX_PAYLOAD + ZP_HEADER_SIZE];
+    uint8_t inner[ZP_MAX_PAYLOAD + ZP_INNER_OVERHEAD];
+    uint8_t frame[ZP_MAX_PAYLOAD + ZP_INNER_OVERHEAD + ZP_HEADER_SIZE];
     uint8_t report[ZP_REPORT_SIZE];
-    size_t total, off = 0;
+    size_t inner_len, total, off = 0;
     int r;
 
-    if (len + ZP_HEADER_SIZE > sizeof(frame)) {
+    inner_len = zp_inner_pack(payload, len, cmd, inner, sizeof(inner));
+    if (inner_len == 0) {
+        c->last_error = ZP_ERR_ARG;
+        return c->last_error;
+    }
+    if (inner_len + ZP_HEADER_SIZE > sizeof(frame)) {
         c->last_error = ZP_ERR_OVERFLOW;
         return c->last_error;
     }
-    total = zp_frame_pack(payload, len, c->tag, frame, sizeof(frame));
+    total = zp_frame_pack(inner, inner_len, c->tag, frame, sizeof(frame));
     if (total == 0) {
         c->last_error = ZP_ERR_ARG;
         return c->last_error;
@@ -202,11 +298,12 @@ int zp_send(zp_conn *c, const uint8_t *payload, size_t len)
     return ZP_OK;
 }
 
-int zp_recv(zp_conn *c, uint8_t *out, size_t out_cap, size_t *out_len)
+int zp_recv(zp_conn *c, uint8_t *cmd, uint8_t *out, size_t out_cap,
+            size_t *out_len)
 {
     uint8_t report[ZP_REPORT_SIZE];
-    uint8_t frame[ZP_MAX_PAYLOAD + ZP_HEADER_SIZE];
-    size_t have = 0, need = 0, got;
+    uint8_t frame[ZP_MAX_PAYLOAD + ZP_INNER_OVERHEAD + ZP_HEADER_SIZE];
+    size_t have = 0, need = 0;
     int r, first = 1;
 
     for (;;) {
@@ -240,28 +337,22 @@ int zp_recv(zp_conn *c, uint8_t *out, size_t out_cap, size_t *out_len)
             break;
     }
 
-    got = need;
-    if (got > out_cap) {
-        c->last_error = ZP_ERR_OVERFLOW;
-        return c->last_error;
-    }
-    if (got)
-        memcpy(out, frame + ZP_HEADER_SIZE, got);
-    *out_len = got;
-    c->last_error = ZP_OK;
-    return ZP_OK;
+    return zp_inner_unpack(frame + ZP_HEADER_SIZE, need, cmd, out, out_cap,
+                           out_len);
 }
 
-int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t *out,
-            size_t out_cap, size_t *out_len)
+int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd,
+            uint8_t *rsp_cmd, uint8_t *out, size_t out_cap, size_t *out_len)
 {
+    uint8_t local = 0;
+    uint8_t *slot = rsp_cmd ? rsp_cmd : &local;
     int r;
 
     zp_drain(c);
-    r = zp_send(c, payload, len);
+    r = zp_send(c, payload, len, cmd);
     if (r != ZP_OK)
         return r;
-    return zp_recv(c, out, out_cap, out_len);
+    return zp_recv(c, slot, out, out_cap, out_len);
 }
 
 const char *zp_strerror(uint32_t err)
@@ -285,6 +376,8 @@ const char *zp_strerror(uint32_t err)
         return "bad frame sync (no AE 1E header)";
     case ZP_ERR_OVERFLOW:
         return "payload too large";
+    case ZP_ERR_CRC:
+        return "CRC mismatch";
     default:
         return "unknown";
     }

@@ -9,8 +9,11 @@ Device: `Bus 003 Device 005: ID 4084:4357 Nuvoton HID Transfer`
 |---|---|
 | USB enumeration, endpoints, report descriptor | **confirmed** (observed) |
 | HID report framing (64-byte chunking) | **confirmed** (observed) |
-| Frame header `AE 1E len tag` | **confirmed** (reverse engineered) |
-| Payload / command layer | **unknown** — open work |
+| HID frame header `AE 1E len tag` | **confirmed** (reverse engineered) |
+| Inner frame `80 len cmd .. CRC16` | **confirmed** (reverse engineered) |
+| CRC-16/MODBUS | **confirmed**, check value verified |
+| 15 command bytes | **recovered** (opcodes listed below) |
+| Payload layout per command | **unknown** — open work |
 | DSP register map | **unknown** — open work |
 
 ## USB layer (observed)
@@ -84,6 +87,62 @@ The earlier assumption that this device speaks the stock Nuvoton
 18-byte `CMD_T` header, no byte-sum checksum and no 2048-byte page geometry.
 Only the USB-level report layout is inherited from the Nuvoton sample.
 
+## Inner frame (the command envelope)
+
+The HID frame above is itself a transport. Everything the application sends
+carries one more envelope, built at `0x41f8e0`:
+
+```
+offset      size  meaning
+  0          1    0x80
+  1          1    payload length + 3, or 0xFF when the length is >= 250
+  2          1    command byte
+  3          len  payload
+  3+len      1    CRC >> 8
+  4+len      1    CRC & 0xFF
+```
+
+`len` in the table is the payload length, so the inner frame is
+`payload + 5` bytes. The CRC covers bytes `0 .. len+2` (header plus payload,
+excluding the CRC itself).
+
+The CRC at `0x41f8a0` is **CRC-16/MODBUS**: polynomial `0x8005` reflected
+to `0xA001`, init `0xFFFF`, both refin and refout true, no final xor. The
+standard check value for the ASCII string `123456789` is `0x4B37`, which the
+implementation in `src/hid/zp_hid.c` reproduces.
+
+So a complete request on the wire is:
+
+```
+AE 1E <L:16 BE> C8          L = payload length + 5
+  80 <len+3> <cmd> <payload> <CRC:16 BE>
+    split into 64-byte HID reports
+```
+
+The application has three send paths selected by a mode variable at
+`0x6d7fdc`: mode 1 goes through the HID framer, mode 2 uses another transport
+(`0x6338d8`), and anything else writes the buffer raw. The same payload
+builder serves all three, which confirms the envelope is transport agnostic.
+
+## Command bytes
+
+Fifteen distinct command bytes are passed to the inner frame builder across its
+35 call sites:
+
+| cmd | call sites | cmd | call sites |
+|---|---|---|---|
+| `0x00` | 1 | `0x57` | 1 |
+| `0x03` | 4 | `0x5A` | 2 |
+| `0x04` | 6 | `0x5B` | 1 |
+| `0x06` | 8 | `0x5C` | 1 |
+| `0x10` | 2 | `0xF0` | 1 |
+| `0x20` | 1 | `0xFC` | 1 |
+| `0x21` | 1 | `0xFE` | 1 |
+|  |  | `0xFF` | 1 |
+
+`0x06` is by far the most used and is the first one sent at connect time, so it
+is the most likely handshake or status poll.
+
 ## Open work: the payload layer
 
 Everything above describes the envelope only. The payload carries the actual
@@ -92,10 +151,10 @@ is the bulk of the remaining reverse engineering.
 
 Approaches, in order of preference:
 
-1. **Read the higher layer out of the binary.** There is exactly one call site
-   of the frame builder (`call 0x41e6e0` at `0x41fa0b`), so the payload
-   construction is in one function. Trace the caller to recover the payload
-   layout, then the EQ/XM/crossover register writes.
+1. **Read the higher layer out of the binary.** The envelope is done; what
+   remains is the payload each command carries. The call sites listed above
+   are the entry points, and correlating them with the UI handlers that write
+   EQ, crossover and delay values gives the register map.
 2. **Differential dumps.** With a working frame layer, send a minimal read
    request, vary one setting in the vendor tool, and diff the responses. This
    maps payload opcodes and offsets to DSP parameters empirically.
@@ -121,6 +180,12 @@ sudo ./scripts/install-udev.sh    # grants access to /dev/hidraw7
 `tools/zpdecode.py` decodes a usbmon text capture, and
 `tools/diffdump.py` diffs two response captures. Both still assume the older
 CMD_T layout and need updating once the payload format is known.
+
+```sh
+./build/zpsniff ping --cmd 0x06            # handshake / status poll
+./build/zpsniff xfer --cmd 0x06 --hex ""   # empty payload
+./build/zpsniff xfer --cmd 0x5C -i req.bin # a captured request, replayed
+```
 
 ## Companion files
 

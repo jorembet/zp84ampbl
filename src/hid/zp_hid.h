@@ -20,6 +20,28 @@ extern "C" {
 
 #define ZP_MAX_PAYLOAD 1024
 
+#define ZP_INNER_HDR 3
+#define ZP_INNER_CRC 2
+#define ZP_INNER_OVERHEAD (ZP_INNER_HDR + ZP_INNER_CRC)
+#define ZP_INNER_LEN_MAX 250
+
+/* command bytes seen in the vendor tool */
+#define ZP_CMD_00 0x00
+#define ZP_CMD_03 0x03
+#define ZP_CMD_04 0x04
+#define ZP_CMD_06 0x06
+#define ZP_CMD_10 0x10
+#define ZP_CMD_20 0x20
+#define ZP_CMD_21 0x21
+#define ZP_CMD_57 0x57
+#define ZP_CMD_5A 0x5A
+#define ZP_CMD_5B 0x5B
+#define ZP_CMD_5C 0x5C
+#define ZP_CMD_F0 0xF0
+#define ZP_CMD_FC 0xFC
+#define ZP_CMD_FE 0xFE
+#define ZP_CMD_FF 0xFF
+
 enum {
     ZP_OK = 0,
     ZP_ERR_OPEN = 1,
@@ -29,7 +51,8 @@ enum {
     ZP_ERR_IO = 5,
     ZP_ERR_ARG = 6,
     ZP_ERR_SYNC = 7,
-    ZP_ERR_OVERFLOW = 8
+    ZP_ERR_OVERFLOW = 8,
+    ZP_ERR_CRC = 9
 };
 
 typedef struct {
@@ -50,10 +73,17 @@ size_t zp_frame_pack(const uint8_t *payload, size_t len, uint8_t tag,
 int zp_frame_unpack(const uint8_t *frame, size_t avail, uint8_t *payload,
                     size_t *payload_len);
 
-int zp_send(zp_conn *c, const uint8_t *payload, size_t len);
-int zp_recv(zp_conn *c, uint8_t *out, size_t out_cap, size_t *out_len);
-int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t *out,
-            size_t out_cap, size_t *out_len);
+uint16_t zp_crc16_modbus(const uint8_t *buf, size_t len);
+size_t zp_inner_pack(const uint8_t *payload, size_t len, uint8_t cmd,
+                     uint8_t *out, size_t out_cap);
+int zp_inner_unpack(const uint8_t *in, size_t avail, uint8_t *cmd,
+                    uint8_t *payload, size_t out_cap, size_t *payload_len);
+
+int zp_send(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd);
+int zp_recv(zp_conn *c, uint8_t *cmd, uint8_t *out, size_t out_cap,
+            size_t *out_len);
+int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd,
+            uint8_t *rsp_cmd, uint8_t *out, size_t out_cap, size_t *out_len);
 
 int zp_write_report(zp_conn *c, const uint8_t *report);
 int zp_read_report(zp_conn *c, uint8_t *report);
