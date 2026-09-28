@@ -106,6 +106,13 @@ int zp_block_write(zp_conn *c, uint16_t addr, const uint8_t *data,
                    size_t len);
 int zp_byte_write(zp_conn *c, uint8_t value);
 
+/* CMD_ID takes a list of 16 bit parameter ids and returns one 32 bit value
+   per id, in order. Confirmed on hardware: 2 bytes in, 4 bytes out. */
+#define ZP_ID_BYTES 2
+#define ZP_ID_VALUE_BYTES 4
+int zp_id_query(zp_conn *c, const uint16_t *ids, size_t count, uint8_t *out,
+                size_t out_cap, size_t *out_len);
+
 int zp_write_report(zp_conn *c, const uint8_t *report);
 int zp_read_report(zp_conn *c, uint8_t *report);
 int zp_drain(zp_conn *c);

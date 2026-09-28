@@ -13,7 +13,9 @@ Device: `Bus 003 Device 005: ID 4084:4357 Nuvoton HID Transfer`
 | Inner frame `80 len cmd .. CRC16` | **confirmed** (reverse engineered) |
 | CRC-16/MODBUS | **confirmed**, check value verified |
 | 15 command bytes | **recovered** (opcodes listed below) |
-| Block access cmd `0xFF` (3 byte addr + 256 B) | **confirmed** |
+| `0x06` id query: 2 B in, 4 B out, **on hardware** | **confirmed** |
+| Parameter id space, id -> meaning | **unknown** — open work |
+| Block access cmd `0xFF` (3 byte addr + 256 B) | **confirmed statically** |
 | Bulk parameter stream cmd `0x04`, 0x78E bytes | **confirmed** |
 | What the 0x78E bytes mean | **unknown** — open work |
 
@@ -129,7 +131,8 @@ builder serves all three, which confirms the envelope is transport agnostic.
 
 Two commands carry essentially all of the configuration.
 
-**`0xFF` — block access.** Payload is a 3 byte big endian address followed by
+**`0xFF` — block access.** (From static analysis only; not yet exercised
+against hardware.) Payload is a 3 byte big endian address followed by
 256 bytes of data, 259 bytes total:
 
 ```
@@ -151,9 +154,36 @@ current settings into the amplifier.
 So the register map is a flat 1934 byte block. Mapping it means finding which
 offset holds which knob.
 
-**`0x06` — id query.** A two byte payload sent at connect time, guarded by a
-comparison against `0x0FFF` in a status word. This is the most likely handshake
-or presence poll, and the first thing worth trying against real hardware.
+**`0x06` — parameter id query.** Verified on hardware. The payload is a list
+of 16 bit parameter ids; the reply carries one 32 bit value per id, in order.
+Two input bytes produce four output bytes, and the exchange repeats:
+
+```
+send  06 len=2  payload 00 00
+recv  06 len=4  00 00 23 20
+```
+
+Measured reply sizes: len 1 -> 4, 2 -> 4, 3 -> 8, 4 -> 8, 5 -> 12,
+6 -> 12, 7 -> 16, 8 -> 16, i.e. `4 * ceil(len / 2)`. A zero payload gets no
+reply at all, which is why an empty handshake times out. The vendor's own
+handshake is `0x06` with two zero bytes.
+
+Sending an all-zero id list returns `00 00 23 20` for every complete 16 bit
+word, so the transform is deterministic rather than random. A trailing odd
+byte produces a different tail (`00 53 00 64`, `00 cd 00 f0`, `00 65 00 00`),
+which shows the reply is a function of the input, not a fixed blob.
+
+This matches `cmp WORD PTR ds:0x6eb200, 0x0FFF` found next to the `0x06` call
+sites: a 16 bit id space with `0x0FFF` as the sentinel.
+
+This is the way to read amplifier state. Enumerating the id space and
+correlating values with the vendor UI is far more tractable than diffing
+memory dumps.
+
+```sh
+sudo ./build/zpsniff get --id 0x0000 --id 0x0001 --id 0x0002
+sudo ./build/zpsniff idscan --from 0x0000 --count 256
+```
 
 ## Command bytes
 

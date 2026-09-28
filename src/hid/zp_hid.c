@@ -403,6 +403,24 @@ int zp_byte_write(zp_conn *c, uint8_t value)
     return zp_send(c, &value, 1, ZP_CMD_BYTE_WRITE);
 }
 
+int zp_id_query(zp_conn *c, const uint16_t *ids, size_t count, uint8_t *out,
+                size_t out_cap, size_t *out_len)
+{
+    uint8_t req[ZP_ID_BYTES * 64];
+    size_t i;
+
+    if (count == 0 || count > 64) {
+        c->last_error = ZP_ERR_ARG;
+        return c->last_error;
+    }
+    for (i = 0; i < count; i++) {
+        req[i * 2] = (uint8_t)(ids[i] & 0xFF);
+        req[i * 2 + 1] = (uint8_t)(ids[i] >> 8);
+    }
+    return zp_xfer(c, req, count * ZP_ID_BYTES, ZP_CMD_ID, NULL, out, out_cap,
+                   out_len);
+}
+
 const char *zp_strerror(uint32_t err)
 {
     switch (err) {

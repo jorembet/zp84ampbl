@@ -18,6 +18,8 @@ static void usage(void)
          "  find                          locate the hidraw node\n"
          "  ping                          send the vendor 0x06 handshake\n"
          "  sweep                         try 0x06 with payload lengths 0..8\n"
+         "  get    --id A [--id B ...]    read parameters by 16 bit id\n"
+         "  idscan --from A --count N      scan the id space, print non-zero\n"
          "  send   -i FILE                send FILE as the payload\n"
          "  xfer   -i FILE                send FILE, print the reply\n"
          "  raw    -i FILE                send FILE verbatim, no framing\n"
@@ -106,7 +108,9 @@ int main(int argc, char **argv)
 {
     const char *cmd = NULL, *dev = NULL, *in_path = NULL, *out_path = NULL;
     const char *hex = NULL;
-    uint32_t tag = ZP_FRAME_TAG, addr = 0;
+    uint32_t tag = ZP_FRAME_TAG, addr = 0, id_from = 0, id_count = 0;
+    uint16_t ids[64];
+    size_t nids = 0;
     uint32_t cmdid = 0x06;
     uint8_t rspcmd = 0;
     int tmo = 400, i, keep_sync = 0;
@@ -128,6 +132,22 @@ int main(int argc, char **argv)
             dev = argv[++i];
         else if (!strcmp(a, "--cmd") && has_next)
             cmdid = (uint32_t)strtoul(argv[++i], NULL, 0);
+        else if (!strcmp(a, "--id") && has_next) {
+            if (nids < 64)
+                ids[nids++] = (uint16_t)strtoul(argv[++i], NULL, 0);
+            else
+                i++;
+        } else if (!strcmp(a, "--ids") && has_next) {
+            const char *p2 = argv[++i];
+            while (*p2 && nids < 64) {
+                ids[nids++] = (uint16_t)strtoul(p2, (char **)&p2, 0);
+                while (*p2 == ',' || *p2 == ' ')
+                    p2++;
+            }
+        } else if (!strcmp(a, "--from") && has_next)
+            id_from = (uint32_t)strtoul(argv[++i], NULL, 0);
+        else if (!strcmp(a, "--count") && has_next)
+            id_count = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--addr") && has_next)
             addr = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--tag") && has_next)
@@ -162,7 +182,8 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    if (strcmp(cmd, "ping") && strcmp(cmd, "sweep") && strcmp(cmd, "send") &&
+    if (strcmp(cmd, "get") && strcmp(cmd, "idscan") && strcmp(cmd, "ping") &&
+        strcmp(cmd, "sweep") && strcmp(cmd, "send") &&
         strcmp(cmd, "xfer") && strcmp(cmd, "raw") && strcmp(cmd, "block") &&
         strcmp(cmd, "dump")) {
         usage();
@@ -206,6 +227,65 @@ int main(int argc, char **argv)
     c.tag = (uint8_t)tag;
     c.timeout_ms = tmo;
 
+    if (!strcmp(cmd, "get")) {
+        size_t rlen2 = 0;
+        int r;
+        size_t i;
+        if (nids == 0) {
+            fprintf(stderr, "need at least one --id\n");
+            zp_close(&c);
+            return 1;
+        }
+        r = zp_id_query(&c, ids, nids, reply, sizeof(reply), &rlen2);
+        if (r != ZP_OK) {
+            printf("id query failed: %s\n", zp_strerror((uint32_t)r));
+            zp_close(&c);
+            return 1;
+        }
+        printf("asked %zu id(s), got %zu byte(s)\n", nids, rlen2);
+        for (i = 0; i + ZP_ID_VALUE_BYTES <= rlen2; i += ZP_ID_VALUE_BYTES) {
+            uint32_t v = (uint32_t)reply[i] | ((uint32_t)reply[i + 1] << 8) |
+                         ((uint32_t)reply[i + 2] << 16) |
+                         ((uint32_t)reply[i + 3] << 24);
+            uint16_t id = (i / ZP_ID_VALUE_BYTES < nids)
+                              ? ids[i / ZP_ID_VALUE_BYTES]
+                              : 0;
+            printf("  id 0x%04x -> 0x%08x  (%u)\n", id, v, v);
+        }
+        zp_close(&c);
+        return 0;
+    }
+    if (!strcmp(cmd, "idscan")) {
+        uint32_t base, batch;
+        int r = ZP_OK;
+        if (id_count == 0)
+            id_count = 256;
+        for (base = id_from; base < id_from + id_count; base += batch) {
+            uint32_t k;
+            size_t rlen2 = 0, n = 0;
+            batch = 64;
+            if (base + batch > id_from + id_count)
+                batch = id_from + id_count - base;
+            for (k = 0; k < batch; k++)
+                ids[n++] = (uint16_t)(base + k);
+            r = zp_id_query(&c, ids, n, reply, sizeof(reply), &rlen2);
+            if (r != ZP_OK) {
+                fprintf(stderr, "idscan base 0x%04x: %s\n", base,
+                        zp_strerror((uint32_t)r));
+                zp_close(&c);
+                return 1;
+            }
+            for (k = 0; k + ZP_ID_VALUE_BYTES <= rlen2; k += ZP_ID_VALUE_BYTES) {
+                uint32_t v = (uint32_t)reply[k] | ((uint32_t)reply[k + 1] << 8) |
+                             ((uint32_t)reply[k + 2] << 16) |
+                             ((uint32_t)reply[k + 3] << 24);
+                if (v != 0)
+                    printf("id 0x%04x = 0x%08x  (%u)\n", base + k / 4, v, v);
+            }
+        }
+        zp_close(&c);
+        return 0;
+    }
     if (!strcmp(cmd, "ping") || !strcmp(cmd, "sweep")) {
         int r;
         if (!strcmp(cmd, "sweep")) {
