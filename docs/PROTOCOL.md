@@ -176,9 +176,28 @@ which shows the reply is a function of the input, not a fixed blob.
 This matches `cmp WORD PTR ds:0x6eb200, 0x0FFF` found next to the `0x06` call
 sites: a 16 bit id space with `0x0FFF` as the sentinel.
 
-This is the way to read amplifier state. Enumerating the id space and
-correlating values with the vendor UI is far more tractable than diffing
-memory dumps.
+Verified further on hardware: the echo is exact for every id tested, and
+batching works. Eight ids in one request returns 32 bytes as expected.
+
+What lives at each id is still open. In the range 0x0000-0x003f only six ids
+are non-zero:
+
+| id | value |
+|---|---|
+| `0x0000` | `0x2023` (8227) |
+| `0x0001` | `0x1702` (5890) |
+| `0x0002`, `0x0003`, `0x0004` | `0xf401` (-3071) |
+| `0x0007` | `0x0700` (1792) |
+
+Three different ids returning the identical `0xf401` argues that `0x06` is
+reporting a **type descriptor** rather than a measurement, since real
+crossover and EQ values would differ. `0x0700` at id 7 looks like a capability
+bitmask (bits 8, 9, 10 set). None of this is confirmed; it is the reading that
+fits the data so far.
+
+Consequence: if `0x06` only reports types, actual values need another command.
+`0xFF` block access is the next candidate, and it is still only known from
+static analysis.
 
 ```sh
 sudo ./build/zpsniff get --id 0x0000 --id 0x0001 --id 0x0002

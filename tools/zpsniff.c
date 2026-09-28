@@ -20,7 +20,8 @@ static void usage(void)
          "  sweep                         try 0x06 with payload lengths 0..8\n"
          "  get    --id A [--id B ...]    read parameters by 16 bit id\n"
          "  idscan --from A --count N [--batch B]\n"
-         "                                scan the id space, report per batch\n"
+         "                                scan the id space, summarise\n"
+         "  idscan ... -v                  also list every non-zero id\n"
          "  send   -i FILE                send FILE as the payload\n"
          "  xfer   -i FILE                send FILE, print the reply\n"
          "  raw    -i FILE                send FILE verbatim, no framing\n"
@@ -111,6 +112,7 @@ int main(int argc, char **argv)
     const char *hex = NULL;
     uint32_t tag = ZP_FRAME_TAG, addr = 0, id_from = 0, id_count = 0;
     uint32_t id_batch = 0;
+    int verbose = 0;
     uint16_t ids[64];
     size_t nids = 0;
     uint32_t cmdid = 0x06;
@@ -148,6 +150,8 @@ int main(int argc, char **argv)
             }
         } else if (!strcmp(a, "--from") && has_next)
             id_from = (uint32_t)strtoul(argv[++i], NULL, 0);
+        else if (!strcmp(a, "-v"))
+            verbose = 1;
         else if (!strcmp(a, "--batch") && has_next)
             id_batch = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--count") && has_next)
@@ -272,6 +276,11 @@ int main(int argc, char **argv)
     }
     if (!strcmp(cmd, "idscan")) {
         uint32_t base, batch = id_batch ? id_batch : 16;
+        uint32_t hits = 0, misses = 0, shortrep = 0;
+        int show = verbose;
+        static uint16_t hist[256];
+        static uint32_t histn[256];
+        int hn = 0;
         if (id_count == 0)
             id_count = 256;
         printf("scanning 0x%04x..0x%04x in batches of %u\n", id_from,
@@ -288,19 +297,50 @@ int main(int argc, char **argv)
                 zp_close(&c);
                 return 1;
             }
-            printf("  base 0x%04x n=%u -> %zu byte(s) (expect %zu)\n", base, nb,
-                   rlen2, n * ZP_ID_VALUE_BYTES);
+            if (!show)
+                printf("\r  0x%04x..0x%04x ok (%zu B)", base,
+                       base + nb - 1, rlen2);
+            if (rlen2 != n * ZP_ID_VALUE_BYTES)
+                shortrep++;
             for (k = 0; k + ZP_ID_VALUE_BYTES <= rlen2; k += ZP_ID_VALUE_BYTES) {
                 uint16_t echo =
                     (uint16_t)(reply[k] | ((uint32_t)reply[k + 1] << 8));
                 uint16_t val =
                     (uint16_t)(reply[k + 2] | ((uint32_t)reply[k + 3] << 8));
-                if (val != 0 || echo != (uint16_t)(base + k / 4))
-                    printf("    id 0x%04x echo 0x%04x value 0x%04x (%d)%s\n",
-                           base + k / 4, echo, val, (int16_t)val,
-                           echo == (uint16_t)(base + k / 4) ? "" : "  MISMATCH");
+                int h;
+                if (echo != (uint16_t)(base + k / 4))
+                    printf("\n    id 0x%04x ECHO MISMATCH 0x%04x\n",
+                           base + k / 4, echo);
+                if (val == 0) {
+                    misses++;
+                    continue;
+                }
+                hits++;
+                if (show)
+                    printf("    id 0x%04x value 0x%04x (%d)\n", base + k / 4,
+                           val, (int16_t)val);
+                for (h = 0; h < hn; h++)
+                    if (hist[h] == val)
+                        break;
+                if (h == hn && hn < 256) {
+                    hist[hn] = val;
+                    histn[hn] = 0;
+                    hn++;
+                }
+                if (h < 256)
+                    histn[h]++;
             }
         }
+        if (!show)
+            printf("\r");
+        printf("\n%u id(s) non-zero, %u zero", hits, misses);
+        if (shortrep)
+            printf(", %u batch(es) returned a short reply", shortrep);
+        printf("\n");
+        printf("distinct values:\n");
+        for (base = 0; base < (uint32_t)hn; base++)
+            printf("  0x%04x (%6d)  x%u\n", hist[base],
+                   (int16_t)hist[base], histn[base]);
         zp_close(&c);
         return 0;
     }
