@@ -19,6 +19,8 @@ static void usage(void)
          "  ping                          send the vendor 0x06 handshake\n"
          "  sweep                         try 0x06 with payload lengths 0..8\n"
          "  get    --id A [--id B ...]    read parameters by 16 bit id\n"
+         "  snap   -o FILE                 read the whole id space\n"
+         "  diff   A B                     compare two snapshots by id\n"
          "  idscan --from A --count N [--batch B]\n"
          "                                scan the id space, summarise\n"
          "  idscan ... -v                  also list every non-zero id\n"
@@ -190,7 +192,8 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    if (strcmp(cmd, "get") && strcmp(cmd, "idscan") && strcmp(cmd, "ping") &&
+    if (strcmp(cmd, "get") && strcmp(cmd, "snap") && strcmp(cmd, "diff") &&
+        strcmp(cmd, "idscan") && strcmp(cmd, "ping") &&
         strcmp(cmd, "sweep") && strcmp(cmd, "send") &&
         strcmp(cmd, "xfer") && strcmp(cmd, "raw") && strcmp(cmd, "block") &&
         strcmp(cmd, "dump")) {
@@ -235,6 +238,98 @@ int main(int argc, char **argv)
     c.tag = (uint8_t)tag;
     c.timeout_ms = tmo;
 
+    if (!strcmp(cmd, "diff")) {
+        char p1[512], p2[512];
+        FILE *fa, *fb;
+        if (argc < 4) {
+            fprintf(stderr, "usage: zpsniff diff <a.txt> <b.txt>\n");
+            zp_close(&c);
+            return 1;
+        }
+        snprintf(p1, sizeof(p1), "%s", argv[2]);
+        snprintf(p2, sizeof(p2), "%s", argv[3]);
+        fa = fopen(p1, "r");
+        fb = fopen(p2, "r");
+        if (!fa || !fb) {
+            fprintf(stderr, "cannot open both snapshots\n");
+            if (fa)
+                fclose(fa);
+            if (fb)
+                fclose(fb);
+            zp_close(&c);
+            return 1;
+        }
+        {
+            char la[128], lb[128];
+            int changed = 0;
+            while (fgets(la, sizeof(la), fa) && fgets(lb, sizeof(lb), fb)) {
+                unsigned ida, idb, va, vb, ta, tb;
+                if (sscanf(la, "%x %x %x", &ida, &ta, &va) != 3)
+                    continue;
+                if (sscanf(lb, "%x %x %x", &idb, &tb, &vb) != 3)
+                    continue;
+                if (va != vb || ta != tb) {
+                    printf("id 0x%04x: type 0x%04x->0x%04x  value 0x%04x->0x%04x\n",
+                           ida, ta, tb, va, vb);
+                    changed++;
+                }
+            }
+            if (!changed)
+                printf("no differences\n");
+            else
+                printf("\n%d id(s) changed\n", changed);
+        }
+        fclose(fa);
+        fclose(fb);
+        zp_close(&c);
+        return 0;
+    }
+    if (!strcmp(cmd, "snap")) {
+        FILE *f;
+        char path[256];
+        uint32_t base;
+        if (out_path)
+            f = fopen(out_path, "w");
+        else {
+            if (zp_find_hidraw(path, sizeof(path)) != ZP_OK) {
+                fprintf(stderr, "device not found\n");
+                zp_close(&c);
+                return 1;
+            }
+            f = fopen("snapshot.txt", "w");
+        }
+        if (!f) {
+            fprintf(stderr, "cannot write the snapshot\n");
+            zp_close(&c);
+            return 1;
+        }
+        fprintf(f, "# id type value\n");
+        for (base = 0; base < ZP_PARAM_COUNT; base += 64) {
+            uint32_t k, nb = 64;
+            size_t rlen2 = 0, n = 0;
+            if (base + nb > ZP_PARAM_COUNT)
+                nb = ZP_PARAM_COUNT - base;
+            for (k = 0; k < nb; k++)
+                ids[n++] = (uint16_t)(base + k);
+            if (zp_id_query(&c, ids, n, reply, sizeof(reply), &rlen2) != ZP_OK) {
+                fprintf(stderr, "query failed at 0x%04x\n", base);
+                break;
+            }
+            for (k = 0; k + ZP_ID_VALUE_BYTES <= rlen2; k += ZP_ID_VALUE_BYTES) {
+                uint16_t val =
+                    (uint16_t)(reply[k + 2] | ((uint32_t)reply[k + 3] << 8));
+                if (val)
+                    fprintf(f, "%04x %04x %04x\n", (unsigned)(base + k / 4),
+                            val, val);
+            }
+            printf("\rsnapshot 0x%04x..0x%04x", base, base + nb - 1);
+            fflush(stdout);
+        }
+        fclose(f);
+        printf("\nsnapshot written\n");
+        zp_close(&c);
+        return 0;
+    }
     if (!strcmp(cmd, "get")) {
         size_t rlen2 = 0;
         int r;

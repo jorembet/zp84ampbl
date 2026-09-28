@@ -209,9 +209,20 @@ type_lo`, read at `0x41f360` and `0x41f370`.
 So the "value" a `0x06` reply carries is the value the vendor tool holds, and
 the id space is 16 bit, bounded by `0x78E`.
 
+A note on reading the disassembly: most table accesses appear as
+`[reg*8 + 0x6eb200]`, which looks like a stride of 8 rather than 24. The
+tripling is hidden one instruction earlier, `lea edx,[ecx+ecx*2]`, so
+`id*3*8` is `id*24`. There is only one table here.
+
 Other bounds seen nearby: `0x61A` (1562) is a special id that gets extra
 handling, and `0x61B` appears in the write direction. Both still need
 identifying.
+
+`cmd 0x03` replies with a 24 byte device name at `0x6dfba0`, which the app
+uses for identification.
+
+The app also stores whole presets as "scenes" (`Save machine scene`,
+`Load machine scene`), which is likely a direct dump of this table.
 
 ### Reply dispatch
 
@@ -250,7 +261,15 @@ which knob each id maps to is still unknown.
 ```sh
 sudo ./build/zpsniff get --id 0x0000 --id 0x0001 --id 0x0002
 sudo ./build/zpsniff idscan --from 0x0000 --count 256
+sudo ./build/zpsniff snap -o before.txt
+sudo ./build/zpsniff diff before.txt after.txt
 ```
+
+### Mapping an id to a control
+
+Change exactly one setting in the Android app over Bluetooth, then snapshot
+again and diff. The id that moved is that control. Repeating per control
+builds the map, and it needs no Windows and no guessing.
 
 ## Command bytes
 
