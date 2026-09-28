@@ -179,6 +179,57 @@ sites: a 16 bit id space with `0x0FFF` as the sentinel.
 Verified further on hardware: the echo is exact for every id tested, and
 batching works. Eight ids in one request returns 32 bytes as expected.
 
+### The parameter table
+
+The vendor tool keeps the amplifier's parameters in a flat table found at
+`0x6eb200`, **1934 entries of 24 bytes**, indexed by a 16 bit id:
+
+```
+id < 0x78E   (1934)
+offset = id * 24        (lea eax,[eax+eax*2] then three doublings)
++0x00  u16   type
++0x02  u8    flag
++0x04  u32   value
+```
+
+The stride arithmetic is explicit in the code at `0x41f300`:
+`lea eax,[eax+eax*2]` gives x3, then `add eax,eax` three times gives x24.
+
+The reply records are 4 bytes, **all big endian**: `id_hi id_lo type_hi
+type_lo`, read at `0x41f360` and `0x41f370`.
+
+`0x06` is the command that **defines** table entries. Its handler at
+`0x41f342` is the one that stores both the type and the value:
+
+```
+0x41f389  mov WORD  [table + id*24 + 0x00], type
+0x41f390  mov DWORD [table + id*24 + 0x04], value
+```
+
+So the "value" a `0x06` reply carries is the value the vendor tool holds, and
+the id space is 16 bit, bounded by `0x78E`.
+
+Other bounds seen nearby: `0x61A` (1562) is a special id that gets extra
+handling, and `0x61B` appears in the write direction. Both still need
+identifying.
+
+### Reply dispatch
+
+A `cmd -> slot` byte table at `0x41f840` feeds a jump table at `0x41f810`.
+Only a handful of commands are handled; everything else falls through to a
+default at `0x41f751`:
+
+| cmd | slot | handler | role |
+|---|---|---|---|
+| `0x00` | 0 | `0x41f260` | bulk header, reads a 32 bit BE value |
+| `0x01` | 1 | `0x41f5b2` | |
+| `0x03` | 2 | `0x41f3d2` | reads bytes from offset 4 into a work area |
+| `0x04` | 3 | `0x41f5d5` | |
+| `0x06` | 4 | `0x41f342` | defines table entries (type + value) |
+| `0x20` | 5 | `0x41f5e4` | sets a 0x20 length then replies |
+| `0x21` | 6 | `0x41f60a` | sets a 0x21 length then falls through to the record loop |
+| default | 11 | `0x41f751` | ignored |
+
 What lives at each id is still open. In the range 0x0000-0x003f only six ids
 are non-zero:
 
@@ -189,15 +240,12 @@ are non-zero:
 | `0x0002`, `0x0003`, `0x0004` | `0xf401` (-3071) |
 | `0x0007` | `0x0700` (1792) |
 
-Three different ids returning the identical `0xf401` argues that `0x06` is
-reporting a **type descriptor** rather than a measurement, since real
-crossover and EQ values would differ. `0x0700` at id 7 looks like a capability
-bitmask (bits 8, 9, 10 set). None of this is confirmed; it is the reading that
-fits the data so far.
-
-Consequence: if `0x06` only reports types, actual values need another command.
-`0xFF` block access is the next candidate, and it is still only known from
-static analysis.
+Three different ids returning the identical `0xf401` means those ids share
+a type while carrying the same value, which fits a table of parameter
+definitions rather than a set of live measurements. `0x0700` at id 7 is
+consistent with a capability bitmask (bits 8, 9, 10 set). The `type` field is
+now confirmed to exist and to be 16 bit, so these numbers are that field, but
+which knob each id maps to is still unknown.
 
 ```sh
 sudo ./build/zpsniff get --id 0x0000 --id 0x0001 --id 0x0002
