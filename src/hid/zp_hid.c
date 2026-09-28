@@ -355,6 +355,54 @@ int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd,
     return zp_recv(c, slot, out, out_cap, out_len);
 }
 
+void zp_block_request(uint16_t addr, uint8_t *payload)
+{
+    payload[0] = (uint8_t)((addr >> 8) & 0xFF);
+    payload[1] = (uint8_t)(addr & 0xFF);
+    payload[2] = 0;
+}
+
+int zp_block_read(zp_conn *c, uint16_t addr, uint8_t *out)
+{
+    uint8_t req[ZP_BLOCK_ADDR_BYTES];
+    uint8_t reply[ZP_MAX_PAYLOAD];
+    size_t rlen = 0;
+    int r;
+
+    zp_block_request(addr, req);
+    r = zp_xfer(c, req, sizeof(req), ZP_CMD_BLOCK, NULL, reply,
+                sizeof(reply), &rlen);
+    if (r != ZP_OK)
+        return r;
+    if (rlen < ZP_BLOCK_SIZE) {
+        c->last_error = ZP_ERR_SHORT;
+        return c->last_error;
+    }
+    memcpy(out, reply, ZP_BLOCK_SIZE);
+    return ZP_OK;
+}
+
+int zp_block_write(zp_conn *c, uint16_t addr, const uint8_t *data, size_t len)
+{
+    uint8_t payload[ZP_BLOCK_ADDR_BYTES + ZP_BLOCK_SIZE];
+
+    if (len > ZP_BLOCK_SIZE) {
+        c->last_error = ZP_ERR_ARG;
+        return c->last_error;
+    }
+    zp_block_request(addr, payload);
+    memcpy(payload + ZP_BLOCK_ADDR_BYTES, data, len);
+    if (len < ZP_BLOCK_SIZE)
+        memset(payload + ZP_BLOCK_ADDR_BYTES + len, 0,
+               ZP_BLOCK_SIZE - len);
+    return zp_send(c, payload, sizeof(payload), ZP_CMD_BLOCK);
+}
+
+int zp_byte_write(zp_conn *c, uint8_t value)
+{
+    return zp_send(c, &value, 1, ZP_CMD_BYTE_WRITE);
+}
+
 const char *zp_strerror(uint32_t err)
 {
     switch (err) {

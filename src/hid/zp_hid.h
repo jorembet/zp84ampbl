@@ -25,6 +25,16 @@ extern "C" {
 #define ZP_INNER_OVERHEAD (ZP_INNER_HDR + ZP_INNER_CRC)
 #define ZP_INNER_LEN_MAX 250
 
+/* CMD_BLOCK reads or writes a 256 byte page at a 16-bit address.
+   payload = addr[3] big endian, then 256 bytes. total 259. */
+#define ZP_CMD_BLOCK 0xFF
+#define ZP_BLOCK_SIZE 256
+#define ZP_BLOCK_ADDR_BYTES 3
+#define ZP_MAX_ADDR 0xFFFF
+
+/* The full parameter image the application streams with CMD_BYTE_WRITE. */
+#define ZP_PARAM_BYTES 0x78E
+
 /* command bytes seen in the vendor tool */
 #define ZP_CMD_00 0x00
 #define ZP_CMD_03 0x03
@@ -41,6 +51,11 @@ extern "C" {
 #define ZP_CMD_FC 0xFC
 #define ZP_CMD_FE 0xFE
 #define ZP_CMD_FF 0xFF
+
+/* CMD_BYTE_WRITE: 1 byte payload, streamed 0x78E times to load the
+   complete parameter image. */
+#define ZP_CMD_BYTE_WRITE 0x04
+#define ZP_CMD_ID 0x06
 
 enum {
     ZP_OK = 0,
@@ -84,6 +99,12 @@ int zp_recv(zp_conn *c, uint8_t *cmd, uint8_t *out, size_t out_cap,
             size_t *out_len);
 int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd,
             uint8_t *rsp_cmd, uint8_t *out, size_t out_cap, size_t *out_len);
+
+void zp_block_request(uint16_t addr, uint8_t *payload);
+int zp_block_read(zp_conn *c, uint16_t addr, uint8_t *out);
+int zp_block_write(zp_conn *c, uint16_t addr, const uint8_t *data,
+                   size_t len);
+int zp_byte_write(zp_conn *c, uint8_t value);
 
 int zp_write_report(zp_conn *c, const uint8_t *report);
 int zp_read_report(zp_conn *c, uint8_t *report);

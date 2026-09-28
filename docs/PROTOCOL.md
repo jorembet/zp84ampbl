@@ -13,8 +13,9 @@ Device: `Bus 003 Device 005: ID 4084:4357 Nuvoton HID Transfer`
 | Inner frame `80 len cmd .. CRC16` | **confirmed** (reverse engineered) |
 | CRC-16/MODBUS | **confirmed**, check value verified |
 | 15 command bytes | **recovered** (opcodes listed below) |
-| Payload layout per command | **unknown** — open work |
-| DSP register map | **unknown** — open work |
+| Block access cmd `0xFF` (3 byte addr + 256 B) | **confirmed** |
+| Bulk parameter stream cmd `0x04`, 0x78E bytes | **confirmed** |
+| What the 0x78E bytes mean | **unknown** — open work |
 
 ## USB layer (observed)
 
@@ -124,6 +125,36 @@ The application has three send paths selected by a mode variable at
 (`0x6338d8`), and anything else writes the buffer raw. The same payload
 builder serves all three, which confirms the envelope is transport agnostic.
 
+## The DSP parameter image
+
+Two commands carry essentially all of the configuration.
+
+**`0xFF` — block access.** Payload is a 3 byte big endian address followed by
+256 bytes of data, 259 bytes total:
+
+```
+payload[0] = (addr >> 16) & 0xFF
+payload[1] = (addr >>  8) & 0xFF
+payload[2] =  addr        & 0xFF
+payload[3 .. 259] = 256 byte page
+```
+
+The application iterates pages to move the whole image, so the DSP parameter
+space is a flat byte array addressed by a 16 bit offset, transferred 256 bytes
+at a time.
+
+**`0x04` — bulk write.** A one byte payload, sent repeatedly in a loop bounded
+by `cmp eax, 0x78E`. That is the complete parameter image: **1934 bytes**.
+This is the "load to DSP" path, and it is almost certainly what writes the
+current settings into the amplifier.
+
+So the register map is a flat 1934 byte block. Mapping it means finding which
+offset holds which knob.
+
+**`0x06` — id query.** A two byte payload sent at connect time, guarded by a
+comparison against `0x0FFF` in a status word. This is the most likely handshake
+or presence poll, and the first thing worth trying against real hardware.
+
 ## Command bytes
 
 Fifteen distinct command bytes are passed to the inner frame builder across its
@@ -182,10 +213,16 @@ sudo ./scripts/install-udev.sh    # grants access to /dev/hidraw7
 CMD_T layout and need updating once the payload format is known.
 
 ```sh
-./build/zpsniff ping --cmd 0x06            # handshake / status poll
-./build/zpsniff xfer --cmd 0x06 --hex ""   # empty payload
-./build/zpsniff xfer --cmd 0x5C -i req.bin # a captured request, replayed
+./build/zpsniff ping --cmd 0x06             # handshake / status poll
+./build/zpsniff xfer --cmd 0x06 --hex ""    # empty payload
+./build/zpsniff block --addr 0 -o page0.bin # read 256 bytes at address 0
+./build/zpsniff dump -o state.bin           # read the whole 0x78E image
 ```
+
+`dump` is the important one: it walks the parameter image 256 bytes at a time.
+Comparing a dump taken with the vendor tool idle against one taken after a
+single setting change identifies the offsets that matter, and repeating that
+for each control produces the register map.
 
 ## Companion files
 

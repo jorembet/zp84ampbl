@@ -21,6 +21,8 @@ static void usage(void)
          "  send   -i FILE             send FILE as the payload\n"
          "  xfer   -i FILE             send FILE, print the reply payload\n"
          "  raw    -i FILE [-o FILE]   send FILE verbatim (no framing)\n"
+         "  block  --addr A [-o FILE]   read a 256 byte page at address A\n"
+         "  dump   -o FILE              read the whole 0x78E byte image\n"
          "\n"
          "  --dev PATH                 override hidraw node\n"
          "  --tag N                    frame tag byte (default 0xC8)\n"
@@ -104,7 +106,7 @@ int main(int argc, char **argv)
 {
     const char *cmd = NULL, *dev = NULL, *in_path = NULL, *out_path = NULL;
     const char *hex = NULL;
-    uint32_t tag = ZP_FRAME_TAG;
+    uint32_t tag = ZP_FRAME_TAG, addr = 0;
     uint32_t cmdid = 0x06;
     uint8_t rspcmd = 0;
     int tmo = 400, i, keep_sync = 0;
@@ -126,6 +128,8 @@ int main(int argc, char **argv)
             dev = argv[++i];
         else if (!strcmp(a, "--cmd") && has_next)
             cmdid = (uint32_t)strtoul(argv[++i], NULL, 0);
+        else if (!strcmp(a, "--addr") && has_next)
+            addr = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--tag") && has_next)
             tag = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--tmo") && has_next)
@@ -159,7 +163,7 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(cmd, "ping") && strcmp(cmd, "send") && strcmp(cmd, "xfer") &&
-        strcmp(cmd, "raw")) {
+        strcmp(cmd, "raw") && strcmp(cmd, "block") && strcmp(cmd, "dump")) {
         usage();
         return 1;
     }
@@ -233,6 +237,48 @@ int main(int argc, char **argv)
                 }
             }
         }
+    } else if (!strcmp(cmd, "block")) {
+        int r = zp_block_read(&c, (uint16_t)addr, reply);
+        if (r != ZP_OK) {
+            printf("block read 0x%04x failed: %s\n", addr,
+                   zp_strerror((uint32_t)r));
+            rc = 1;
+        } else {
+            printf("block 0x%04x (%d bytes)\n", addr, ZP_BLOCK_SIZE);
+            hexdump(stdout, reply, ZP_BLOCK_SIZE);
+            if (out_path) {
+                FILE *f = fopen(out_path, "wb");
+                if (f) {
+                    fwrite(reply, 1, ZP_BLOCK_SIZE, f);
+                    fclose(f);
+                }
+            }
+        }
+    } else if (!strcmp(cmd, "dump")) {
+        uint8_t page[ZP_BLOCK_SIZE];
+        FILE *f = out_path ? fopen(out_path, "wb") : NULL;
+        uint32_t a;
+        size_t total = 0;
+        int r = ZP_OK;
+        for (a = 0; a < (uint32_t)ZP_PARAM_BYTES; a += ZP_BLOCK_SIZE) {
+            r = zp_block_read(&c, (uint16_t)a, page);
+            if (r != ZP_OK) {
+                fprintf(stderr, "block 0x%04x: %s\n", a,
+                        zp_strerror((uint32_t)r));
+                rc = 1;
+                break;
+            }
+            total += ZP_BLOCK_SIZE;
+            printf("\rread %zu bytes", total);
+            fflush(stdout);
+            if (f)
+                fwrite(page, 1, ZP_BLOCK_SIZE, f);
+        }
+        if (f)
+            fclose(f);
+        if (rc == 0)
+            printf("\nwrote %zu bytes to %s\n", total,
+                   out_path ? out_path : "(no file)");
     } else {
         int r = 0;
         size_t off = 0;
