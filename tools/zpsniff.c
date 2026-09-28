@@ -9,26 +9,26 @@ static void usage(void)
 {
     puts("zpsniff - ZP 8.4 AMP (Nuvoton 4084:4357) frame explorer\n"
          "\n"
-         "Wire format (reverse engineered from the vendor PC tool):\n"
-         "    AE 1E <len_hi> <len_lo> <tag> <payload...>\n"
-         "len is 16-bit big endian and counts payload bytes only; the whole\n"
-         "frame is split into 64-byte HID reports.\n"
+         "Wire format, reverse engineered from the vendor PC tool:\n"
+         "    report (64B) -> AE 1E <len:16 BE> C8 <inner>\n"
+         "    inner         -> 80 <len+3 or 0xFF> <cmd> <payload> <CRC16 modbus>\n"
          "\n"
          "usage: zpsniff <cmd> [options]\n"
          "\n"
-         "  find                       locate the hidraw node\n"
-         "  ping                       send an empty frame, report any reply\n"
-         "  send   -i FILE             send FILE as the payload\n"
-         "  xfer   -i FILE             send FILE, print the reply payload\n"
-         "  raw    -i FILE [-o FILE]   send FILE verbatim (no framing)\n"
-         "  block  --addr A [-o FILE]   read a 256 byte page at address A\n"
-         "  dump   -o FILE              read the whole 0x78E byte image\n"
+         "  find                          locate the hidraw node\n"
+         "  ping                          send the vendor 0x06 handshake\n"
+         "  sweep                         try 0x06 with payload lengths 0..8\n"
+         "  send   -i FILE                send FILE as the payload\n"
+         "  xfer   -i FILE                send FILE, print the reply\n"
+         "  raw    -i FILE                send FILE verbatim, no framing\n"
+         "  block  --addr A [-o FILE]     read a 256 byte page at address A\n"
+         "  dump   -o FILE                read the whole 0x78E byte image\n"
          "\n"
-         "  --dev PATH                 override hidraw node\n"
-         "  --tag N                    frame tag byte (default 0xC8)\n"
-         "  --tmo MS                   reply timeout (default 400)\n"
-         "  --hex STR                  inline payload as hex bytes\n"
-         "  --keep-sync                do not resync on a bad AE 1E header");
+         "  --dev PATH                    override hidraw node\n"
+         "  --cmd N                       command byte (default 0x06)\n"
+         "  --tag N                       frame tag byte (default 0xC8)\n"
+         "  --tmo MS                      reply timeout (default 400)\n"
+         "  --hex STR                     inline payload as hex bytes");
 }
 
 static void hexdump(FILE *f, const uint8_t *b, size_t n)
@@ -162,8 +162,9 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    if (strcmp(cmd, "ping") && strcmp(cmd, "send") && strcmp(cmd, "xfer") &&
-        strcmp(cmd, "raw") && strcmp(cmd, "block") && strcmp(cmd, "dump")) {
+    if (strcmp(cmd, "ping") && strcmp(cmd, "sweep") && strcmp(cmd, "send") &&
+        strcmp(cmd, "xfer") && strcmp(cmd, "raw") && strcmp(cmd, "block") &&
+        strcmp(cmd, "dump")) {
         usage();
         return 1;
     }
@@ -187,6 +188,7 @@ int main(int argc, char **argv)
     c.fd = -1;
     {
         char path[256];
+        (void)0;
         if (!dev) {
             if (zp_find_hidraw(path, sizeof(path)) != ZP_OK) {
                 fprintf(stderr, "device %04x:%04x not found\n", ZP_USB_VID,
@@ -204,9 +206,34 @@ int main(int argc, char **argv)
     c.tag = (uint8_t)tag;
     c.timeout_ms = tmo;
 
-    if (!strcmp(cmd, "ping")) {
-        int r = zp_xfer(&c, payload, plen, (uint8_t)cmdid, &rspcmd, reply,
-                        sizeof(reply), &rlen);
+    if (!strcmp(cmd, "ping") || !strcmp(cmd, "sweep")) {
+        int r;
+        if (!strcmp(cmd, "sweep")) {
+            size_t n;
+            for (n = 0; n <= 8; n++) {
+                uint8_t tmp[16];
+                memset(tmp, 0, sizeof(tmp));
+                r = zp_xfer(&c, tmp, n, ZP_CMD_ID, &rspcmd, reply,
+                            sizeof(reply), &rlen);
+                printf("len=%zu cmd=0x%02x -> %s", n, ZP_CMD_ID,
+                       r == ZP_OK ? "REPLY" : zp_strerror((uint32_t)r));
+                if (r == ZP_OK)
+                    printf(" (%zu bytes, rsp cmd=0x%02x)", rlen, rspcmd);
+                printf("\n");
+                if (r == ZP_OK)
+                    hexdump(stdout, reply, rlen);
+            }
+            zp_close(&c);
+            return 0;
+        }
+        {
+            uint8_t hs[2] = {0x00, 0x00};
+            payload[0] = hs[0];
+            payload[1] = hs[1];
+            plen = sizeof(hs);
+        }
+        r = zp_xfer(&c, payload, plen, (uint8_t)cmdid, &rspcmd, reply,
+                    sizeof(reply), &rlen);
         if (r != ZP_OK) {
             printf("no reply: %s\n", zp_strerror((uint32_t)r));
             rc = 1;
