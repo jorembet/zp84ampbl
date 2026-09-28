@@ -1,0 +1,7 @@
+build/
+work/apk/
+work/apk_src/
+work/zp.dis
+*.exe
+*.apk
+__pycache__/
