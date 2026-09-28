@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ZP 8.4 AMP DSP Editor
+GenericName=DSP Editor
+Comment=Edit crossover, EQ and time alignment on a ZP 8.4 AMP
+Exec=@EXEC@ @ARGS@
+Icon=zp84-dsp
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
+Keywords=dsp;crossover;eq;audio;car;amplifier;
+StartupNotify=true
+StartupWMClass=zp84gui

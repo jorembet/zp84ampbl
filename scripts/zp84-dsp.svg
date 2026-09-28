@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect x="4" y="4" width="120" height="120" rx="18" fill="#1e1e22" stroke="#3a3a42" stroke-width="2"/>
+  <g stroke="#3a3a42" stroke-width="1">
+    <line x1="20" y1="44" x2="108" y2="44"/>
+    <line x1="20" y1="66" x2="108" y2="66"/>
+    <line x1="20" y1="88" x2="108" y2="88"/>
+    <line x1="20" y1="22" x2="108" y2="22" stroke="#4a4a55"/>
+  </g>
+  <path d="M20 66 C40 66 46 26 64 26 C82 26 88 66 108 66"
+        fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round"/>
+  <g fill="#4ade80">
+    <rect x="18" y="64" width="6" height="6" rx="1.5"/>
+    <rect x="32" y="60" width="6" height="6" rx="1.5"/>
+    <rect x="46" y="44" width="6" height="6" rx="1.5"/>
+    <rect x="61" y="24" width="6" height="6" rx="1.5"/>
+    <rect x="76" y="42" width="6" height="6" rx="1.5"/>
+    <rect x="90" y="58" width="6" height="6" rx="1.5"/>
+    <rect x="104" y="64" width="6" height="6" rx="1.5"/>
+  </g>
+  <line x1="46" y1="22" x2="46" y2="106" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 4"/>
+  <line x1="96" y1="22" x2="96" y2="106" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 4"/>
+  <text x="64" y="119" font-family="DejaVu Sans, sans-serif" font-size="13"
+        font-weight="bold" fill="#4a9eff" text-anchor="middle">DSP</text>
+</svg>

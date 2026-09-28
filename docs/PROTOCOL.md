@@ -281,3 +281,44 @@ for each control produces the register map.
   is an EQ chart demo. Decompiled sources are in `work/apk_src/`.
 - `ZP 8.4 AMP_EN.exe` — the vendor PC tool, and the source of truth for the
   USB protocol. Disassembly kept in `work/zp.dis`.
+
+## The application
+
+`src/gui/zp84gui.c` is a native Xlib editor. It links straight against the DSP
+and HID libraries, so it needs no toolkit beyond `libX11`, and it installs as
+a single binary.
+
+```sh
+./scripts/install-app.sh
+```
+
+This builds and installs:
+
+- `~/.local/bin/zp84gui`
+- `~/.local/share/applications/zp84-dsp.desktop` (validated with
+  `desktop-file-validate`)
+- `~/.local/share/icons/hicolor/scalable/apps/zp84-dsp.svg`
+
+What it does today:
+
+- 31 band graphic EQ per channel, drag the handles in the plot
+- Linkwitz-Riley crossover at 12, 24 or 48 dB per octave, with the
+  power-sum make-up gain applied automatically
+- Time alignment (delay) and polarity
+- Live composite response curve computed with the same code the tests cover
+- Connect and "Read ids" against real hardware via the `0x06` query
+
+Controls: drag a handle, `1`-`8` to pick a channel, up/down to nudge the
+nearest band, `Esc` to quit.
+
+### What it does not do yet
+
+There is no **write** path. The app reads parameters over `0x06` but cannot
+push settings to the amplifier, because the write commands (`0x04` bulk
+stream, `0xFF` block access) are only known from static analysis and have
+never been exercised against hardware. Until they are, nothing in the GUI
+modifies the amplifier, which is deliberate: shipping a write path built on
+an unverified assumption risks bricking a channel.
+
+`--selftest MS` and `--shot FILE.ppm` exist for headless verification, which is
+how the layout above was checked.
