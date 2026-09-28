@@ -421,6 +421,40 @@ int zp_id_query(zp_conn *c, const uint16_t *ids, size_t count, uint8_t *out,
                    out_len);
 }
 
+int zp_params_parse(const uint8_t *rec, size_t len, zp_param *out, size_t cap,
+                    size_t *count)
+{
+    size_t i, n = 0;
+
+    for (i = 0; i + 4 <= len; i += 4) {
+        uint16_t id = (uint16_t)((rec[i] << 8) | rec[i + 1]);
+        uint16_t type = (uint16_t)((rec[i + 2] << 8) | rec[i + 3]);
+        if (id >= ZP_PARAM_COUNT)
+            continue;
+        if (out && id < cap) {
+            out[id].type = type;
+            out[id].flag = 1;
+            out[id].value = 0;
+        }
+        n++;
+    }
+    if (count)
+        *count = n;
+    return 0;
+}
+
+int zp_param_get(const zp_param *tab, size_t count, uint16_t id, zp_param *out)
+{
+    if (id >= ZP_PARAM_COUNT || !tab)
+        return 0;
+    if (!(tab[id].flag & 1u))
+        return 0;
+    if (out)
+        *out = tab[id];
+    (void)count;
+    return 1;
+}
+
 const char *zp_strerror(uint32_t err)
 {
     switch (err) {

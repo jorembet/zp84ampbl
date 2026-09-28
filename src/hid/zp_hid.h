@@ -34,6 +34,21 @@ extern "C" {
 
 /* The full parameter image the application streams with CMD_BYTE_WRITE. */
 #define ZP_PARAM_BYTES 0x78E
+#define ZP_PARAM_COUNT ZP_PARAM_BYTES
+#define ZP_PARAM_STRIDE 24
+
+typedef struct {
+    uint16_t type;
+    uint8_t flag;
+    uint32_t value;
+} zp_param;
+
+/* Parse 4 byte big endian records (id_hi id_lo type_hi type_lo) as the
+   vendor tool writes them, filling a parameter table. */
+int zp_params_parse(const uint8_t *rec, size_t len, zp_param *out, size_t cap,
+                    size_t *count);
+int zp_param_get(const zp_param *tab, size_t count, uint16_t id,
+                 zp_param *out);
 
 /* command bytes seen in the vendor tool */
 #define ZP_CMD_00 0x00

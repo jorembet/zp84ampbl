@@ -126,6 +126,30 @@ int main(void)
                               out2, sizeof(out2), &plen2) == ZP_ERR_OVERFLOW);
     }
 
+    {
+        static const uint8_t rec[] = {0x00, 0x00, 0x20, 0x23,   /* id 0, type 0x2023 */
+                                     0x00, 0x01, 0x17, 0x02,   /* id 1, type 0x1702 */
+                                     0x00, 0x02, 0xf4, 0x01};  /* id 2, type 0xf401 */
+        zp_param tab[8];
+        zp_param got;
+        size_t n = 0;
+
+        check("record parse succeeds", zp_params_parse(rec, sizeof(rec), tab, 8, &n) == 0);
+        check("three records parsed", n == 3);
+        check("id 0 present", zp_param_get(tab, ZP_PARAM_COUNT, 0, &got) == 1);
+        check("id 0 type is 0x2023", got.type == 0x2023);
+        check("id 1 type is 0x1702", zp_param_get(tab, ZP_PARAM_COUNT, 1, &got) == 1 && got.type == 0x1702);
+        check("id 2 type is 0xf401", zp_param_get(tab, ZP_PARAM_COUNT, 2, &got) == 1 && got.type == 0xf401);
+        check("undefined id 7 absent", zp_param_get(tab, ZP_PARAM_COUNT, 7, &got) == 0);
+        check("out of range id rejected", zp_param_get(tab, ZP_PARAM_COUNT, 0xFFFF, &got) == 0);
+
+        {
+            static const uint8_t big[] = {0x0F, 0x8E, 0xAB, 0xCD};
+            check("id 0x0F8E is past the bound and skipped", zp_params_parse(big, 4, tab, 8, &n) == 0);
+            check("out of bound record not counted", n == 0);
+        }
+    }
+
     printf("\n%d checks, %d failure(s)\n", checks, failures);
     return failures ? 1 : 0;
 }
