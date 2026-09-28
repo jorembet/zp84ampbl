@@ -353,7 +353,8 @@ static void draw(void)
           "drag a handle  |  1-8 channel  |  up/down nudge");
     dtext(880, WIN_H - 12, A.good, A.nlog ? A.log[0] : "");
 
-    XCopyArea(A.dpy, A.buf, A.win, A.gc, 0, 0, 0, 0, WIN_W, WIN_H);
+    XSetWindowBackgroundPixmap(A.dpy, A.win, A.buf);
+    XClearWindow(A.dpy, A.win);
     XFlush(A.dpy);
 }
 
@@ -550,7 +551,14 @@ int main(int argc, char **argv)
                                 100, 60, WIN_W, WIN_H, 1, A.bg, A.bg);
     wa.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask |
                     PointerMotionMask | KeyPressMask | StructureNotifyMask;
-    XChangeWindowAttributes(A.dpy, A.win, CWEventMask, &wa);
+    wa.background_pixmap = A.buf;
+    wa.background_pixel = A.bg;
+    wa.border_pixel = 0x4a9eff;
+    wa.override_redirect = True;
+    XChangeWindowAttributes(A.dpy, A.win,
+                            CWEventMask | CWBackPixmap | CWBackPixel |
+                                CWBorderPixel | CWOverrideRedirect,
+                            &wa);
     XStoreName(A.dpy, A.win, "ZP 8.4 AMP - DSP Editor");
     XSelectInput(A.dpy, A.win, wa.event_mask);
 
@@ -580,6 +588,7 @@ int main(int argc, char **argv)
 
     XMapWindow(A.dpy, A.win);
     XFlush(A.dpy);
+    draw();
 
     if (selftest_ms > 0) {
         struct timespec ts;
@@ -599,10 +608,10 @@ int main(int argc, char **argv)
         XNextEvent(A.dpy, &ev);
         switch (ev.type) {
         case Expose:
-            if (ev.xexpose.count == 0)
-                draw();
+            draw();
             break;
         case ConfigureNotify:
+        case MapNotify:
             draw();
             break;
         case MotionNotify: {
