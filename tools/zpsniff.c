@@ -19,7 +19,8 @@ static void usage(void)
          "  ping                          send the vendor 0x06 handshake\n"
          "  sweep                         try 0x06 with payload lengths 0..8\n"
          "  get    --id A [--id B ...]    read parameters by 16 bit id\n"
-         "  idscan --from A --count N      scan the id space, print non-zero\n"
+         "  idscan --from A --count N [--batch B]\n"
+         "                                scan the id space, report per batch\n"
          "  send   -i FILE                send FILE as the payload\n"
          "  xfer   -i FILE                send FILE, print the reply\n"
          "  raw    -i FILE                send FILE verbatim, no framing\n"
@@ -109,6 +110,7 @@ int main(int argc, char **argv)
     const char *cmd = NULL, *dev = NULL, *in_path = NULL, *out_path = NULL;
     const char *hex = NULL;
     uint32_t tag = ZP_FRAME_TAG, addr = 0, id_from = 0, id_count = 0;
+    uint32_t id_batch = 0;
     uint16_t ids[64];
     size_t nids = 0;
     uint32_t cmdid = 0x06;
@@ -146,6 +148,8 @@ int main(int argc, char **argv)
             }
         } else if (!strcmp(a, "--from") && has_next)
             id_from = (uint32_t)strtoul(argv[++i], NULL, 0);
+        else if (!strcmp(a, "--batch") && has_next)
+            id_batch = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--count") && has_next)
             id_count = (uint32_t)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(a, "--addr") && has_next)
@@ -243,44 +247,58 @@ int main(int argc, char **argv)
             return 1;
         }
         printf("asked %zu id(s), got %zu byte(s)\n", nids, rlen2);
+        printf("  %-9s %-9s %-11s %-8s  %s\n", "req_id", "echo_id", "value",
+               "signed", "raw");
         for (i = 0; i + ZP_ID_VALUE_BYTES <= rlen2; i += ZP_ID_VALUE_BYTES) {
-            uint32_t v = (uint32_t)reply[i] | ((uint32_t)reply[i + 1] << 8) |
-                         ((uint32_t)reply[i + 2] << 16) |
-                         ((uint32_t)reply[i + 3] << 24);
+            uint16_t echo = (uint16_t)(reply[i] | ((uint32_t)reply[i + 1] << 8));
+            uint16_t val =
+                (uint16_t)(reply[i + 2] | ((uint32_t)reply[i + 3] << 8));
             uint16_t id = (i / ZP_ID_VALUE_BYTES < nids)
                               ? ids[i / ZP_ID_VALUE_BYTES]
                               : 0;
-            printf("  id 0x%04x -> 0x%08x  (%u)\n", id, v, v);
+            int ok = (echo == id);
+            int b;
+            printf("  0x%04x     0x%04x     0x%04x     %6d   ", id, echo, val,
+                   (int16_t)val);
+            for (b = 0; b < ZP_ID_VALUE_BYTES; b++)
+                printf("%02x", reply[i + b]);
+            printf("%s\n", ok ? "" : "   <- ECHO MISMATCH");
         }
+        if (rlen2 < nids * ZP_ID_VALUE_BYTES)
+            printf("  (expected %zu byte(s) for %zu id(s), got %zu)\n",
+                   nids * ZP_ID_VALUE_BYTES, nids, rlen2);
         zp_close(&c);
         return 0;
     }
     if (!strcmp(cmd, "idscan")) {
-        uint32_t base, batch;
-        int r = ZP_OK;
+        uint32_t base, batch = id_batch ? id_batch : 16;
         if (id_count == 0)
             id_count = 256;
+        printf("scanning 0x%04x..0x%04x in batches of %u\n", id_from,
+               id_from + id_count - 1, batch);
         for (base = id_from; base < id_from + id_count; base += batch) {
-            uint32_t k;
+            uint32_t k, nb = batch;
             size_t rlen2 = 0, n = 0;
-            batch = 64;
-            if (base + batch > id_from + id_count)
-                batch = id_from + id_count - base;
-            for (k = 0; k < batch; k++)
+            if (base + nb > id_from + id_count)
+                nb = id_from + id_count - base;
+            for (k = 0; k < nb; k++)
                 ids[n++] = (uint16_t)(base + k);
-            r = zp_id_query(&c, ids, n, reply, sizeof(reply), &rlen2);
-            if (r != ZP_OK) {
-                fprintf(stderr, "idscan base 0x%04x: %s\n", base,
-                        zp_strerror((uint32_t)r));
+            if (zp_id_query(&c, ids, n, reply, sizeof(reply), &rlen2) != ZP_OK) {
+                fprintf(stderr, "base 0x%04x: query failed\n", base);
                 zp_close(&c);
                 return 1;
             }
+            printf("  base 0x%04x n=%u -> %zu byte(s) (expect %zu)\n", base, nb,
+                   rlen2, n * ZP_ID_VALUE_BYTES);
             for (k = 0; k + ZP_ID_VALUE_BYTES <= rlen2; k += ZP_ID_VALUE_BYTES) {
-                uint32_t v = (uint32_t)reply[k] | ((uint32_t)reply[k + 1] << 8) |
-                             ((uint32_t)reply[k + 2] << 16) |
-                             ((uint32_t)reply[k + 3] << 24);
-                if (v != 0)
-                    printf("id 0x%04x = 0x%08x  (%u)\n", base + k / 4, v, v);
+                uint16_t echo =
+                    (uint16_t)(reply[k] | ((uint32_t)reply[k + 1] << 8));
+                uint16_t val =
+                    (uint16_t)(reply[k + 2] | ((uint32_t)reply[k + 3] << 8));
+                if (val != 0 || echo != (uint16_t)(base + k / 4))
+                    printf("    id 0x%04x echo 0x%04x value 0x%04x (%d)%s\n",
+                           base + k / 4, echo, val, (int16_t)val,
+                           echo == (uint16_t)(base + k / 4) ? "" : "  MISMATCH");
             }
         }
         zp_close(&c);
