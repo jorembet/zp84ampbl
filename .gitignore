@@ -5,3 +5,18 @@ work/zp.dis
 *.exe
 *.apk
 __pycache__/
+
+# Local speaker placement preferences
+zp84-layout.conf
+zp84-layout-??????
+
+# Local DSP scenes
+zp84-preset-*.scene
+zp84-preset-??????
+
+# Local output usage marks
+zp84-outputs.conf
+zp84-outputs-??????
+
+# Transient capture dumps from tools/zpsniff
+zevox-snapshot-*

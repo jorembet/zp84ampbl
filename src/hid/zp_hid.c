@@ -50,8 +50,10 @@ int zp_open(zp_conn *c, const char *path)
     c->tag = ZP_FRAME_TAG;
     c->last_rx = 0;
     c->last_tx = 0;
+    c->last_errno = 0;
     c->fd = open(path, O_RDWR);
     if (c->fd < 0) {
+        c->last_errno = errno;
         c->last_error = ZP_ERR_OPEN;
         return ZP_ERR_OPEN;
     }
@@ -164,10 +166,18 @@ int zp_inner_unpack(const uint8_t *in, size_t avail, uint8_t *cmd,
         return ZP_ERR_SYNC;
     }
     if (in[1] == 0xFF) {
-        *payload_len = 0;
-        return ZP_ERR_OVERFLOW;
+        /* Extended length: payloads of 250 bytes or more do not fit the
+           one-byte length field, so the true inner size is the outer HID
+           frame length (L = payload + 5). The caller passes exactly that
+           many bytes as avail. */
+        if (avail < ZP_INNER_OVERHEAD) {
+            *payload_len = 0;
+            return ZP_ERR_SHORT;
+        }
+        n = avail - ZP_INNER_CRC;
+    } else {
+        n = (size_t)in[1];
     }
-    n = (size_t)in[1];
     if (n < ZP_INNER_HDR) {
         *payload_len = 0;
         return ZP_ERR_SHORT;
@@ -201,6 +211,7 @@ int zp_write_report(zp_conn *c, const uint8_t *report)
 {
     ssize_t n = write(c->fd, report, ZP_REPORT_SIZE);
     if (n != (ssize_t)ZP_REPORT_SIZE) {
+        c->last_errno = (n < 0) ? errno : 0;
         c->last_error = (n < 0) ? ZP_ERR_IO : ZP_ERR_SHORT;
         return c->last_error;
     }
@@ -231,6 +242,7 @@ int zp_read_report(zp_conn *c, uint8_t *report)
         if (n < 0) {
             if (errno == EINTR || errno == EAGAIN)
                 continue;
+            c->last_errno = errno;
             c->last_error = ZP_ERR_IO;
             return c->last_error;
         }
@@ -304,22 +316,22 @@ int zp_recv(zp_conn *c, uint8_t *cmd, uint8_t *out, size_t out_cap,
     uint8_t report[ZP_REPORT_SIZE];
     uint8_t frame[ZP_MAX_PAYLOAD + ZP_INNER_OVERHEAD + ZP_HEADER_SIZE];
     size_t have = 0, need = 0;
-    int r, first = 1;
+    int r, synced = 0, attempts = 0;
 
     for (;;) {
         r = zp_read_report(c, report);
         if (r != ZP_OK)
             return r;
 
-        if (first) {
+        if (!synced) {
             if (report[0] != ZP_FRAME_SYN0 || report[1] != ZP_FRAME_SYN1) {
-                if (++first > 8) {
+                if (++attempts >= 8) {
                     c->last_error = ZP_ERR_SYNC;
                     return c->last_error;
                 }
                 continue;
             }
-            first = 0;
+            synced = 1;
             if (report[4] != c->tag)
                 c->tag = report[4];
             need = ((size_t)report[2] << 8) | (size_t)report[3];
@@ -330,7 +342,7 @@ int zp_recv(zp_conn *c, uint8_t *cmd, uint8_t *out, size_t out_cap,
         }
 
         if (have < sizeof(frame))
-            memcpy(frame + have, report, ZP_REPORT_SIZE);
+            memcpy(frame + have, report, sizeof(frame)-have < ZP_REPORT_SIZE ? sizeof(frame)-have : ZP_REPORT_SIZE);
         have += ZP_REPORT_SIZE;
 
         if (have >= need + ZP_HEADER_SIZE)
@@ -357,9 +369,10 @@ int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd,
 
 void zp_block_request(uint16_t addr, uint8_t *payload)
 {
-    payload[0] = (uint8_t)((addr >> 8) & 0xFF);
-    payload[1] = (uint8_t)(addr & 0xFF);
-    payload[2] = 0;
+    /* 3 byte big endian address (high byte is 0 for 16-bit addresses). */
+    payload[0] = 0;
+    payload[1] = (uint8_t)((addr >> 8) & 0xFF);
+    payload[2] = (uint8_t)(addr & 0xFF);
 }
 
 int zp_block_read(zp_conn *c, uint16_t addr, uint8_t *out)
@@ -414,11 +427,27 @@ int zp_id_query(zp_conn *c, const uint16_t *ids, size_t count, uint8_t *out,
         return c->last_error;
     }
     for (i = 0; i < count; i++) {
-        req[i * 2] = (uint8_t)(ids[i] & 0xFF);
-        req[i * 2 + 1] = (uint8_t)(ids[i] >> 8);
+        /* Big endian, matching the vendor tool's table handler. */
+        req[i * 2] = (uint8_t)(ids[i] >> 8);
+        req[i * 2 + 1] = (uint8_t)(ids[i] & 0xFF);
     }
     return zp_xfer(c, req, count * ZP_ID_BYTES, ZP_CMD_ID, NULL, out, out_cap,
                    out_len);
+}
+
+int zp_id_write(zp_conn *c, uint16_t id, uint16_t value)
+{
+    uint8_t req[4] = {id >> 8, id & 255, value >> 8, value & 255};
+    uint8_t reply[16], cmd = 0;
+    size_t len = 0;
+    if (id >= ZP_PARAM_COUNT) return ZP_ERR_ARG;
+    int err = zp_xfer(c, req, 4, ZP_CMD_03, &cmd, reply, sizeof(reply), &len);
+    if (err) return err;
+    if (cmd != ZP_CMD_03 || len != 4 || memcmp(req, reply, 4)) return ZP_ERR_SYNC;
+    err = zp_xfer(c, req, 2, ZP_CMD_ID, &cmd, reply, sizeof(reply), &len);
+    if (err) return err;
+    if (cmd != ZP_CMD_ID || len != 4 || memcmp(req, reply, 4)) return ZP_ERR_SYNC;
+    return ZP_OK;
 }
 
 int zp_params_parse(const uint8_t *rec, size_t len, zp_param *out, size_t cap,
@@ -447,11 +476,12 @@ int zp_param_get(const zp_param *tab, size_t count, uint16_t id, zp_param *out)
 {
     if (id >= ZP_PARAM_COUNT || !tab)
         return 0;
+    if ((size_t)id >= count)
+        return 0;
     if (!(tab[id].flag & 1u))
         return 0;
     if (out)
         *out = tab[id];
-    (void)count;
     return 1;
 }
 

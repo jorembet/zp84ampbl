@@ -2,9 +2,10 @@
 """Diff two flash/register dumps from the ZP 8.4 AMP and summarise the changes.
 
 Workflow for reverse-engineering the register map:
-  1. dump a baseline       -> tools/zpsniff read  --page 0 --pages N -o a.bin
+  1. dump a baseline       -> ./build/zpsniff dump -o a.bin
+     (or one page          -> ./build/zpsniff block --addr 0 -o a.bin)
   2. change ONE setting in the vendor tool (e.g. band 3 +2.0 dB)
-  3. dump again            -> tools/zpsniff read  --page 0 --pages N -o b.bin
+  3. dump again            -> ./build/zpsniff dump -o b.bin
   4. diff                  -> tools/diffdump.py a.bin b.bin
 
 Repeating step 2 for each control you care about produces a table of

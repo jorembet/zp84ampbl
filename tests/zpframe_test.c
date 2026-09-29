@@ -121,9 +121,25 @@ int main(void)
         check("inner header 0x80 required",
               zp_inner_unpack((const uint8_t *)"\x81\x05\x06", 5, &cmd_out,
                               out2, sizeof(out2), &plen2) == ZP_ERR_SYNC);
-        check("0xFF length sentinel rejected",
-              zp_inner_unpack((const uint8_t *)"\x80\xff\x06", 5, &cmd_out,
-                              out2, sizeof(out2), &plen2) == ZP_ERR_OVERFLOW);
+        {
+            /* 256 byte payload: pack emits 0xFF, unpack sizes from avail. */
+            static uint8_t big[256];
+            uint8_t packed[512], uout[512];
+            size_t pl2 = 0;
+            uint8_t c2 = 0;
+            for (i = 0; i < 256; i++)
+                big[i] = (uint8_t)(i * 7 + 3);
+            ilen = zp_inner_pack(big, sizeof(big), 0x04, packed,
+                                 sizeof(packed));
+            check("extended payload sets 0xFF sentinel", packed[1] == 0xFF);
+            check("extended round trip",
+                  zp_inner_unpack(packed, ilen, &c2, uout, sizeof(uout),
+                                  &pl2) == ZP_OK);
+            check("extended length preserved", pl2 == sizeof(big));
+            check("extended command preserved", c2 == 0x04);
+            check("extended payload preserved",
+                  memcmp(uout, big, sizeof(big)) == 0);
+        }
     }
 
     {
@@ -136,18 +152,32 @@ int main(void)
 
         check("record parse succeeds", zp_params_parse(rec, sizeof(rec), tab, 8, &n) == 0);
         check("three records parsed", n == 3);
-        check("id 0 present", zp_param_get(tab, ZP_PARAM_COUNT, 0, &got) == 1);
+        check("id 0 present", zp_param_get(tab, 8, 0, &got) == 1);
         check("id 0 type is 0x2023", got.type == 0x2023);
-        check("id 1 type is 0x1702", zp_param_get(tab, ZP_PARAM_COUNT, 1, &got) == 1 && got.type == 0x1702);
-        check("id 2 type is 0xf401", zp_param_get(tab, ZP_PARAM_COUNT, 2, &got) == 1 && got.type == 0xf401);
-        check("undefined id 7 absent", zp_param_get(tab, ZP_PARAM_COUNT, 7, &got) == 0);
-        check("out of range id rejected", zp_param_get(tab, ZP_PARAM_COUNT, 0xFFFF, &got) == 0);
+        check("id 1 type is 0x1702", zp_param_get(tab, 8, 1, &got) == 1 && got.type == 0x1702);
+        check("id 2 type is 0xf401", zp_param_get(tab, 8, 2, &got) == 1 && got.type == 0xf401);
+        check("undefined id 7 absent", zp_param_get(tab, 8, 7, &got) == 0);
+        check("out of range id rejected", zp_param_get(tab, 8, 0xFFFF, &got) == 0);
+        check("table capacity honored", zp_param_get(tab, 2, 2, &got) == 0);
 
         {
             static const uint8_t big[] = {0x0F, 0x8E, 0xAB, 0xCD};
             check("id 0x0F8E is past the bound and skipped", zp_params_parse(big, 4, tab, 8, &n) == 0);
             check("out of bound record not counted", n == 0);
         }
+    }
+
+    {
+        uint8_t req[3];
+        zp_block_request(0x0000, req);
+        check("block addr 0 is three zero bytes",
+              req[0] == 0x00 && req[1] == 0x00 && req[2] == 0x00);
+        zp_block_request(0x0100, req);
+        check("block addr is 3 byte big endian",
+              req[0] == 0x00 && req[1] == 0x01 && req[2] == 0x00);
+        zp_block_request(0x1234, req);
+        check("block addr 0x1234 packs as 00 12 34",
+              req[0] == 0x00 && req[1] == 0x12 && req[2] == 0x34);
     }
 
     printf("\n%d checks, %d failure(s)\n", checks, failures);

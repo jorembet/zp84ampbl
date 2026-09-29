@@ -1,0 +1,964 @@
+{
+  "schema": "zp84-amp-skin/1",
+  "name": "ZP 8.4 AMP skin",
+  "source": "Ekstraksi dari ZP 8.4 AMP_EN.exe (self-extracting 7-Zip, 25 sprite PNG)",
+  "origin": "Dibuat dengan Adobe Photoshop CC / ImageReady, 2013",
+  "channels": 8,
+  "notes": [
+    "Tidak ada chunk 9p pada PNG asli, jadi tidak ada metadata nine-patch bawaan.",
+    "Asset nine-patch harus didefinisikan manual di aplikasi Linux (lihat README.md).",
+    "Semua warna dalam PNG RGBA; dipakai alpha untuk masking."
+  ],
+  "assets": [
+    {
+      "id": "btn_state_ninepatch",
+      "file": "images/img01.png",
+      "kind": "button",
+      "desc": "9-patch tombol: [normal abu-abu][aktif hijau] + [abu-abu]",
+      "stretch": "9patch-x",
+      "width": 192,
+      "height": 29,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 192,
+        "height": 29,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#646464",
+          "pixels": 2172
+        },
+        {
+          "hex": "#1E781E",
+          "pixels": 1086
+        },
+        {
+          "hex": "#282828",
+          "pixels": 244
+        },
+        {
+          "hex": "#3C3C3C",
+          "pixels": 122
+        },
+        {
+          "hex": "#555555",
+          "pixels": 78
+        }
+      ]
+    },
+    {
+      "id": "toggle_knob",
+      "file": "images/img02.png",
+      "kind": "control",
+      "desc": "Knob toggle: [ON kuning][OFF gelap] + knob gelap lepas",
+      "stretch": null,
+      "width": 56,
+      "height": 14,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 56,
+        "height": 14,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#343533",
+          "pixels": 192
+        },
+        {
+          "hex": "#1C1D1C",
+          "pixels": 94
+        },
+        {
+          "hex": "#FFBC1F",
+          "pixels": 32
+        },
+        {
+          "hex": "#353634",
+          "pixels": 27
+        },
+        {
+          "hex": "#363735",
+          "pixels": 18
+        }
+      ]
+    },
+    {
+      "id": "meter_scale_gain",
+      "file": "images/img03.png",
+      "kind": "overlay",
+      "desc": "Skala meter gain 60..10 dB + OFF, dengan tick mark kecil",
+      "stretch": null,
+      "width": 80,
+      "height": 233,
+      "content": {
+        "x": 0,
+        "y": 5,
+        "width": 80,
+        "height": 190,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#343533",
+          "pixels": 5622
+        },
+        {
+          "hex": "#929297",
+          "pixels": 260
+        },
+        {
+          "hex": "#414240",
+          "pixels": 198
+        },
+        {
+          "hex": "#191919",
+          "pixels": 190
+        },
+        {
+          "hex": "#0C0C0C",
+          "pixels": 190
+        }
+      ]
+    },
+    {
+      "id": "slider_h_track",
+      "file": "images/img04.png",
+      "kind": "control",
+      "desc": "Track slider horizontal: [kosong abu][isi kuning] + [abu]",
+      "stretch": null,
+      "width": 360,
+      "height": 26,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 360,
+        "height": 26,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#FD0E02",
+          "pixels": 636
+        },
+        {
+          "hex": "#343533",
+          "pixels": 237
+        },
+        {
+          "hex": "#161616",
+          "pixels": 208
+        },
+        {
+          "hex": "#1F1E1D",
+          "pixels": 208
+        },
+        {
+          "hex": "#989898",
+          "pixels": 180
+        }
+      ]
+    },
+    {
+      "id": "dropdown_blue",
+      "file": "images/img05.png",
+      "kind": "control",
+      "desc": "Dropdown 2 segmen gelap/biru dengan panah",
+      "stretch": null,
+      "width": 140,
+      "height": 15,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 140,
+        "height": 15,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#4F595E",
+          "pixels": 806
+        },
+        {
+          "hex": "#46728F",
+          "pixels": 804
+        },
+        {
+          "hex": "#000000",
+          "pixels": 324
+        },
+        {
+          "hex": "#B7BAC1",
+          "pixels": 30
+        },
+        {
+          "hex": "#416A85",
+          "pixels": 8
+        }
+      ]
+    },
+    {
+      "id": "led_row_4",
+      "file": "images/img06.png",
+      "kind": "indicator",
+      "desc": "Baris 4 LED status (abu, merah, merah, abu)",
+      "stretch": null,
+      "width": 64,
+      "height": 16,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 16,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#1C1C1C",
+          "pixels": 512
+        },
+        {
+          "hex": "#858585",
+          "pixels": 30
+        },
+        {
+          "hex": "#C84623",
+          "pixels": 26
+        },
+        {
+          "hex": "#373737",
+          "pixels": 6
+        },
+        {
+          "hex": "#212121",
+          "pixels": 6
+        }
+      ]
+    },
+    {
+      "id": "link_bar_dark",
+      "file": "images/img07.png",
+      "kind": "control",
+      "desc": "Bar segment 2 bagian warna gelap solid",
+      "stretch": null,
+      "width": 180,
+      "height": 20,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 20,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#242423",
+          "pixels": 1708
+        },
+        {
+          "hex": "#323332",
+          "pixels": 1368
+        },
+        {
+          "hex": "#1D1D1D",
+          "pixels": 166
+        },
+        {
+          "hex": "#494948",
+          "pixels": 164
+        },
+        {
+          "hex": "#343533",
+          "pixels": 84
+        }
+      ]
+    },
+    {
+      "id": "link_bar_orange",
+      "file": "images/img08.png",
+      "kind": "control",
+      "desc": "Bar segment gelap + isi oranye",
+      "stretch": null,
+      "width": 184,
+      "height": 24,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 184,
+        "height": 24,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#161616",
+          "pixels": 411
+        },
+        {
+          "hex": "#4F4F4F",
+          "pixels": 177
+        },
+        {
+          "hex": "#494949",
+          "pixels": 174
+        },
+        {
+          "hex": "#515151",
+          "pixels": 174
+        },
+        {
+          "hex": "#464646",
+          "pixels": 174
+        }
+      ]
+    },
+    {
+      "id": "fader_v_swatch",
+      "file": "images/img09.png",
+      "kind": "control",
+      "desc": "Fader vertikal + 4 swatch warna link kanal (oranye/hijau/hitam)",
+      "stretch": null,
+      "width": 30,
+      "height": 159,
+      "content": {
+        "x": 0,
+        "y": 7,
+        "width": 30,
+        "height": 148,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#343533",
+          "pixels": 1370
+        },
+        {
+          "hex": "#202020",
+          "pixels": 142
+        },
+        {
+          "hex": "#110F0F",
+          "pixels": 142
+        },
+        {
+          "hex": "#282828",
+          "pixels": 140
+        },
+        {
+          "hex": "#C9C9C9",
+          "pixels": 120
+        }
+      ]
+    },
+    {
+      "id": "fader_v_link3",
+      "file": "images/img10.png",
+      "kind": "control",
+      "desc": "2 track fader vertikal + 3 swatch kanal (oranye/hijau/hitam)",
+      "stretch": null,
+      "width": 36,
+      "height": 209,
+      "content": {
+        "x": 1,
+        "y": 5,
+        "width": 34,
+        "height": 196,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#0E141A",
+          "pixels": 576
+        },
+        {
+          "hex": "#131417",
+          "pixels": 328
+        },
+        {
+          "hex": "#11161C",
+          "pixels": 96
+        },
+        {
+          "hex": "#CCCCCC",
+          "pixels": 96
+        },
+        {
+          "hex": "#707070",
+          "pixels": 96
+        }
+      ]
+    },
+    {
+      "id": "fader_v_off",
+      "file": "images/img11.png",
+      "kind": "control",
+      "desc": "2 track fader vertikal + 3 swatch kanal (semua mati)",
+      "stretch": null,
+      "width": 36,
+      "height": 212,
+      "content": {
+        "x": 2,
+        "y": 3,
+        "width": 32,
+        "height": 195,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#282C35",
+          "pixels": 492
+        },
+        {
+          "hex": "#373E4F",
+          "pixels": 404
+        },
+        {
+          "hex": "#394051",
+          "pixels": 206
+        },
+        {
+          "hex": "#404757",
+          "pixels": 180
+        },
+        {
+          "hex": "#20242D",
+          "pixels": 170
+        }
+      ]
+    },
+    {
+      "id": "icon_speaker_mute",
+      "file": "images/img12.png",
+      "kind": "icon",
+      "desc": "Ikon speaker: [bunyi][mute X][bunyi]",
+      "stretch": null,
+      "width": 148,
+      "height": 18,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 148,
+        "height": 18,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#161616",
+          "pixels": 258
+        },
+        {
+          "hex": "#DEDEDE",
+          "pixels": 110
+        },
+        {
+          "hex": "#262724",
+          "pixels": 93
+        },
+        {
+          "hex": "#484848",
+          "pixels": 62
+        },
+        {
+          "hex": "#4D4D4D",
+          "pixels": 62
+        }
+      ]
+    },
+    {
+      "id": "slider_fill_orange",
+      "file": "images/img13.png",
+      "kind": "control",
+      "desc": "Isian slider abu/oranye + abu",
+      "stretch": null,
+      "width": 148,
+      "height": 18,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 148,
+        "height": 18,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#161616",
+          "pixels": 270
+        },
+        {
+          "hex": "#4D4D4D",
+          "pixels": 132
+        },
+        {
+          "hex": "#484848",
+          "pixels": 132
+        },
+        {
+          "hex": "#262724",
+          "pixels": 103
+        },
+        {
+          "hex": "#4F4F4F",
+          "pixels": 70
+        }
+      ]
+    },
+    {
+      "id": "bar_status_gr",
+      "file": "images/img14.png",
+      "kind": "control",
+      "desc": "Bar status hijau/merah (indikator level)",
+      "stretch": null,
+      "width": 160,
+      "height": 22,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 160,
+        "height": 22,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#343533",
+          "pixels": 303
+        },
+        {
+          "hex": "#000000",
+          "pixels": 188
+        },
+        {
+          "hex": "#1F1E1D",
+          "pixels": 90
+        },
+        {
+          "hex": "#EC1E1E",
+          "pixels": 76
+        },
+        {
+          "hex": "#F93434",
+          "pixels": 76
+        }
+      ]
+    },
+    {
+      "id": "meter_scale_mono",
+      "file": "images/img15.png",
+      "kind": "overlay",
+      "desc": "Skala meter 60..10 dB mono",
+      "stretch": null,
+      "width": 86,
+      "height": 198,
+      "content": {
+        "x": 0,
+        "y": 1,
+        "width": 86,
+        "height": 197,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#343533",
+          "pixels": 6184
+        },
+        {
+          "hex": "#929297",
+          "pixels": 552
+        },
+        {
+          "hex": "#414240",
+          "pixels": 200
+        },
+        {
+          "hex": "#191919",
+          "pixels": 192
+        },
+        {
+          "hex": "#0C0C0C",
+          "pixels": 192
+        }
+      ]
+    },
+    {
+      "id": "fader_v_ticks",
+      "file": "images/img16.png",
+      "kind": "overlay",
+      "desc": "Fader vertikal dengan tick mark + swatch oranye/hijau",
+      "stretch": null,
+      "width": 58,
+      "height": 206,
+      "content": {
+        "x": 0,
+        "y": 6,
+        "width": 55,
+        "height": 196,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#2A2F36",
+          "pixels": 460
+        },
+        {
+          "hex": "#0E141A",
+          "pixels": 320
+        },
+        {
+          "hex": "#D0CDCD",
+          "pixels": 160
+        },
+        {
+          "hex": "#040405",
+          "pixels": 140
+        },
+        {
+          "hex": "#040404",
+          "pixels": 104
+        }
+      ]
+    },
+    {
+      "id": "meter_scale_cut",
+      "file": "images/img17.png",
+      "kind": "overlay",
+      "desc": "Skala 0,-10,-20,-30,-40 dB + OFF (cut/attenuation)",
+      "stretch": null,
+      "width": 80,
+      "height": 205,
+      "content": {
+        "x": 0,
+        "y": 6,
+        "width": 80,
+        "height": 194,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#000000",
+          "pixels": 978
+        },
+        {
+          "hex": "#605D5C",
+          "pixels": 546
+        },
+        {
+          "hex": "#383431",
+          "pixels": 178
+        },
+        {
+          "hex": "#8D989D",
+          "pixels": 172
+        },
+        {
+          "hex": "#679C6F",
+          "pixels": 172
+        }
+      ]
+    },
+    {
+      "id": "icon_power_states",
+      "file": "images/img18.png",
+      "kind": "icon",
+      "desc": "Tombol power 4 state (abu, biru, merah, merah)",
+      "stretch": null,
+      "width": 136,
+      "height": 17,
+      "content": {
+        "x": 9,
+        "y": 0,
+        "width": 117,
+        "height": 16,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#FB0000",
+          "pixels": 307
+        },
+        {
+          "hex": "#378FDC",
+          "pixels": 199
+        },
+        {
+          "hex": "#8591AC",
+          "pixels": 177
+        },
+        {
+          "hex": "#C1B0B0",
+          "pixels": 2
+        },
+        {
+          "hex": "#BE8484",
+          "pixels": 1
+        }
+      ]
+    },
+    {
+      "id": "eq_grid_lines",
+      "file": "images/img19.png",
+      "kind": "overlay",
+      "desc": "Garis grid EQ + 2 blok transparan",
+      "stretch": null,
+      "width": 145,
+      "height": 56,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 145,
+        "height": 29,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#808080",
+          "pixels": 384
+        },
+        {
+          "hex": "#BEBEBE",
+          "pixels": 52
+        },
+        {
+          "hex": "#9E9E9E",
+          "pixels": 32
+        },
+        {
+          "hex": "#F6F6F6",
+          "pixels": 32
+        },
+        {
+          "hex": "#BABABA",
+          "pixels": 28
+        }
+      ]
+    },
+    {
+      "id": "freq_response_plot",
+      "file": "images/img20.png",
+      "kind": "overlay",
+      "desc": "Kurva respon frekuensi + ikon zoom (4 varian)",
+      "stretch": null,
+      "width": 340,
+      "height": 33,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 322,
+        "height": 33,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#DCDCDC",
+          "pixels": 3699
+        },
+        {
+          "hex": "#000000",
+          "pixels": 1171
+        },
+        {
+          "hex": "#378BCA",
+          "pixels": 36
+        },
+        {
+          "hex": "#EA75FF",
+          "pixels": 36
+        },
+        {
+          "hex": "#474747",
+          "pixels": 28
+        }
+      ]
+    },
+    {
+      "id": "dropdown_error",
+      "file": "images/img21.png",
+      "kind": "control",
+      "desc": "Dropdown biru tua + merah tua (state error) dengan panah",
+      "stretch": null,
+      "width": 140,
+      "height": 22,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 140,
+        "height": 22,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#253863",
+          "pixels": 2670
+        },
+        {
+          "hex": "#64759B",
+          "pixels": 360
+        },
+        {
+          "hex": "#FE0701",
+          "pixels": 19
+        },
+        {
+          "hex": "#DCDCDC",
+          "pixels": 10
+        },
+        {
+          "hex": "#2A3D66",
+          "pixels": 4
+        }
+      ]
+    },
+    {
+      "id": "checkbox_states",
+      "file": "images/img22.png",
+      "kind": "control",
+      "desc": "Checkbox: [unchecked][checked][disabled]",
+      "stretch": null,
+      "width": 288,
+      "height": 24,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 241,
+        "height": 24,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#121115",
+          "pixels": 230
+        },
+        {
+          "hex": "#413F47",
+          "pixels": 171
+        },
+        {
+          "hex": "#100F13",
+          "pixels": 74
+        },
+        {
+          "hex": "#111014",
+          "pixels": 67
+        },
+        {
+          "hex": "#0C0B0E",
+          "pixels": 36
+        }
+      ]
+    },
+    {
+      "id": "dropdown_dark",
+      "file": "images/img23.png",
+      "kind": "control",
+      "desc": "Dropdown gelap dengan panah oranye",
+      "stretch": null,
+      "width": 146,
+      "height": 18,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 146,
+        "height": 18,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#222221",
+          "pixels": 1096
+        },
+        {
+          "hex": "#2E2F2E",
+          "pixels": 638
+        },
+        {
+          "hex": "#2E302E",
+          "pixels": 460
+        },
+        {
+          "hex": "#474746",
+          "pixels": 138
+        },
+        {
+          "hex": "#1C1C1C",
+          "pixels": 136
+        }
+      ]
+    },
+    {
+      "id": "dropdown_blue_3seg",
+      "file": "images/img24.png",
+      "kind": "control",
+      "desc": "Dropdown biru 3 segmen dengan panah",
+      "stretch": null,
+      "width": 200,
+      "height": 21,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 200,
+        "height": 21,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#253863",
+          "pixels": 3600
+        },
+        {
+          "hex": "#559DFF",
+          "pixels": 257
+        },
+        {
+          "hex": "#64759B",
+          "pixels": 257
+        },
+        {
+          "hex": "#3FA7FF",
+          "pixels": 22
+        },
+        {
+          "hex": "#EEEEEE",
+          "pixels": 22
+        }
+      ]
+    },
+    {
+      "id": "bar_dark_4seg",
+      "file": "images/img25.png",
+      "kind": "control",
+      "desc": "Bar gelap 4 segmen",
+      "stretch": null,
+      "width": 196,
+      "height": 21,
+      "content": {
+        "x": 0,
+        "y": 0,
+        "width": 196,
+        "height": 21,
+        "empty": false
+      },
+      "palette": [
+        {
+          "hex": "#161616",
+          "pixels": 480
+        },
+        {
+          "hex": "#262724",
+          "pixels": 240
+        },
+        {
+          "hex": "#515151",
+          "pixels": 182
+        },
+        {
+          "hex": "#444444",
+          "pixels": 180
+        },
+        {
+          "hex": "#484848",
+          "pixels": 180
+        }
+      ]
+    }
+  ]
+}

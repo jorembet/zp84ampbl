@@ -1,0 +1,90 @@
+/* theme.css - palet ZP 8.4 AMP, hasil ekstraksi dari sprite skin.
+ *
+ * Warna diambil otomatis dari 25 PNG di images/ lewat build-manifest.ps1
+ * (lihat assets.json -> palette). Semua nilai hex sudah termasuk alpha.
+ *
+ * Pakai:
+ *   - GTK  : masukkan ke ~/.config/gtk-4.0/gtk.css
+ *   - Qt   : qss, sesuaikan nama variabel
+ *   - Web  : <link rel="stylesheet"> atau copy properti ke CSS kamu
+ */
+
+:root {
+  /* ---- surface (dasar gelap app) ---- */
+  --zp-bg-0:        #161616ff;  /* body utama            */
+  --zp-bg-1:        #222221ff;  /* panel                 */
+  --zp-bg-2:        #282828ff;  /* surface               */
+  --zp-bg-3:        #343533ff;  /* track / track meter   */
+  --zp-bg-4:        #484848ff;  /* separator             */
+
+  /* ---- teks ---- */
+  --zp-fg-0:        #dcdcdcff;  /* teks utama            */
+  --zp-fg-1:        #c9c9c9ff;  /* label                 */
+  --zp-fg-2:        #929297ff;  /* label redup / skala   */
+  --zp-fg-3:        #707070ff;  /* hint                  */
+  --zp-fg-disabled: #606060ff;
+
+  /* ---- aksen ---- */
+  --zp-accent:      #ffbc1fff;  /* kuning: knob ON, cursor */
+  --zp-active:      #1e781eff;  /* hijau: state aktif    */
+  --zp-danger:      #ec1e1eff;  /* merah: error, level   */
+  --zp-info:        #378bcaff;  /* biru: aksen sekunder   */
+  --zp-link:        #46728fff;  /* biru dropdown          */
+  --zp-link-deep:   #253863ff;  /* biru tua dropdown      */
+  --zp-mute:        #64759bff;  /* abu dropdown          */
+
+  /* ---- status kanal (dipakai sprite fader) ---- */
+  --zp-ch-1:        #ff7f00ff;  /* oranye - link aktif    */
+  --zp-ch-2:        #00c000ff;  /* hijau  - group aktif   */
+  --zp-ch-3:        #000000ff;  /* hitam  - mati / master */
+
+  /* ---- border ---- */
+  --zp-border:      #2a2a2aff;
+  --zp-border-lit:  #515151ff;
+}
+
+/* --------------------------------------------------------------- contoh */
+
+.zp-window {
+  background: var(--zp-bg-0);
+  color: var(--zp-fg-0);
+  font: 12px "Segoe UI", sans-serif;
+}
+
+.zp-panel {
+  background: var(--zp-bg-1);
+  border: 1px solid var(--zp-border);
+}
+
+.zp-panel-title {
+  background: var(--zp-bg-2);
+  color: var(--zp-fg-2);
+  padding: 4px 8px;
+}
+
+.zp-label      { color: var(--zp-fg-1); }
+.zp-label-dim  { color: var(--zp-fg-2); }
+.zp-readout    { color: var(--zp-accent); font-variant-numeric: tabular-nums; }
+
+/* tombol kanal: abu = idle, kuning = terpilih */
+.zp-ch { background: linear-gradient(#8a8a8a, #6e6e6e); color: #ffffff; }
+.zp-ch.sel { background: linear-gradient(#ffcf3f, #ffbc1f); color: #d33a00; }
+.zp-ch.mute { background: linear-gradient(#6b6b6b, #555); color: var(--zp-fg-3); }
+
+/* meter / fader */
+.zp-track  { background: var(--zp-bg-3); }
+.zp-fill   { background: var(--zp-accent); }
+.zp-fill.orange { background: var(--zp-ch-1); }
+.zp-scale  { background: var(--zp-fg-2); }
+
+/* status */
+.zp-ok      { color: var(--zp-active); }
+.zp-err     { color: var(--zp-danger); }
+.zp-bt-on   { background: var(--zp-info); }
+.zp-link-on { background: var(--zp-link-deep); }
+
+/* daftar palet lengkap */
+.zp-palette {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.zp-swatch { width: 24px; height: 24px; border: 1px solid var(--zp-border); }

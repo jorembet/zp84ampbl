@@ -1,9 +1,11 @@
+#define _POSIX_C_SOURCE 200809L
 #include "../src/hid/zp_hid.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void usage(void)
 {
@@ -15,12 +17,12 @@ static void usage(void)
          "\n"
          "usage: zpsniff <cmd> [options]\n"
          "\n"
-         "  find                          locate the hidraw node\n"
+         "  find                          locate the hidraw node (checks access)\n"
          "  ping                          send the vendor 0x06 handshake\n"
          "  sweep                         try 0x06 with payload lengths 0..8\n"
          "  get    --id A [--id B ...]    read parameters by 16 bit id\n"
-         "  snap   -o FILE                 read the whole id space\n"
-         "  diff   A B                     compare two snapshots by id\n"
+         "  snap   -o FILE [--batch B]    read all ids (default batch 8)\n"
+         "  diff   A B                     compare two snapshots (offline)\n"
          "  idscan --from A --count N [--batch B]\n"
          "                                scan the id space, summarise\n"
          "  idscan ... -v                  also list every non-zero id\n"
@@ -131,6 +133,48 @@ int main(int argc, char **argv)
     }
     cmd = argv[1];
 
+    /* diff takes two positional files and needs no device or options. */
+    if (!strcmp(cmd, "diff")) {
+        FILE *fa, *fb;
+        if (argc < 4) {
+            fprintf(stderr, "usage: zpsniff diff <a.txt> <b.txt>\n");
+            return 1;
+        }
+        fa = fopen(argv[2], "r");
+        fb = fopen(argv[3], "r");
+        if (!fa || !fb) {
+            fprintf(stderr, "cannot open both snapshots\n");
+            if (fa)
+                fclose(fa);
+            if (fb)
+                fclose(fb);
+            return 1;
+        }
+        {
+            char la[128], lb[128];
+            int changed = 0;
+            while (fgets(la, sizeof(la), fa) && fgets(lb, sizeof(lb), fb)) {
+                unsigned ida, idb, va, vb, ta, tb;
+                if (sscanf(la, "%x %x %x", &ida, &ta, &va) != 3)
+                    continue;
+                if (sscanf(lb, "%x %x %x", &idb, &tb, &vb) != 3)
+                    continue;
+                if (va != vb || ta != tb) {
+                    printf("id 0x%04x: type 0x%04x->0x%04x  value 0x%04x->0x%04x\n",
+                           ida, ta, tb, va, vb);
+                    changed++;
+                }
+            }
+            if (!changed)
+                printf("no differences\n");
+            else
+                printf("\n%d id(s) changed\n", changed);
+        }
+        fclose(fa);
+        fclose(fb);
+        return 0;
+    }
+
     for (i = 2; i < argc; i++) {
         const char *a = argv[i];
         int has_next = (i + 1 < argc);
@@ -184,12 +228,26 @@ int main(int argc, char **argv)
 
     if (!strcmp(cmd, "find")) {
         char path[256];
+        int usable = 1;
         if (zp_find_hidraw(path, sizeof(path)) != ZP_OK) {
-            puts("not found");
+            puts("not found (no 4084:4357 hidraw node)");
             return 1;
         }
-        puts(path);
-        return 0;
+        printf("node: %s\n", path);
+        if (access(path, R_OK | W_OK) == 0) {
+            puts("access: read/write OK");
+        } else {
+            printf("access: %s -- fix with one of:\n"
+                   "  sudo ./scripts/install-udev.sh   (persistent)\n"
+                   "  sudo ./build/zpsniff ping        (quick try as root)\n",
+                   strerror(errno));
+            usable = 0;
+        }
+        if (access("/dev/zp84amp", F_OK) == 0)
+            puts("symlink: /dev/zp84amp present");
+        else
+            puts("symlink: /dev/zp84amp missing (udev rule not installed?)");
+        return usable ? 0 : 1;
     }
 
     if (strcmp(cmd, "get") && strcmp(cmd, "snap") && strcmp(cmd, "diff") &&
@@ -231,81 +289,53 @@ int main(int argc, char **argv)
             printf("node: %s\n", dev);
         }
         if (zp_open(&c, dev) != ZP_OK) {
-            fprintf(stderr, "open %s: %s\n", dev, strerror(errno));
+            int e = c.last_errno ? c.last_errno : errno;
+            fprintf(stderr, "open %s: %s\n", dev, strerror(e));
+            if (e == EACCES)
+                fprintf(stderr,
+                        "hint: no read/write access to the hidraw node.\n"
+                        "  sudo ./scripts/install-udev.sh   (persistent)\n"
+                        "  id -nG   (must include plugdev, then relogin)\n"
+                        "  sudo ./build/zpsniff ping        (quick try as root)\n");
+            else if (e == ENOENT)
+                fprintf(stderr,
+                        "hint: node is gone, the amp probably re-enumerated.\n"
+                        "  ./build/zpsniff find   (get the current node)\n"
+                        "  dmesg | tail           (check USB disconnects)\n");
             return 1;
         }
     }
     c.tag = (uint8_t)tag;
     c.timeout_ms = tmo;
 
-    if (!strcmp(cmd, "diff")) {
-        char p1[512], p2[512];
-        FILE *fa, *fb;
-        if (argc < 4) {
-            fprintf(stderr, "usage: zpsniff diff <a.txt> <b.txt>\n");
-            zp_close(&c);
-            return 1;
-        }
-        snprintf(p1, sizeof(p1), "%s", argv[2]);
-        snprintf(p2, sizeof(p2), "%s", argv[3]);
-        fa = fopen(p1, "r");
-        fb = fopen(p2, "r");
-        if (!fa || !fb) {
-            fprintf(stderr, "cannot open both snapshots\n");
-            if (fa)
-                fclose(fa);
-            if (fb)
-                fclose(fb);
-            zp_close(&c);
-            return 1;
-        }
-        {
-            char la[128], lb[128];
-            int changed = 0;
-            while (fgets(la, sizeof(la), fa) && fgets(lb, sizeof(lb), fb)) {
-                unsigned ida, idb, va, vb, ta, tb;
-                if (sscanf(la, "%x %x %x", &ida, &ta, &va) != 3)
-                    continue;
-                if (sscanf(lb, "%x %x %x", &idb, &tb, &vb) != 3)
-                    continue;
-                if (va != vb || ta != tb) {
-                    printf("id 0x%04x: type 0x%04x->0x%04x  value 0x%04x->0x%04x\n",
-                           ida, ta, tb, va, vb);
-                    changed++;
-                }
-            }
-            if (!changed)
-                printf("no differences\n");
-            else
-                printf("\n%d id(s) changed\n", changed);
-        }
-        fclose(fa);
-        fclose(fb);
-        zp_close(&c);
-        return 0;
-    }
     if (!strcmp(cmd, "snap")) {
         FILE *f;
-        char path[256];
-        uint32_t base;
-        if (out_path)
-            f = fopen(out_path, "w");
-        else {
-            if (zp_find_hidraw(path, sizeof(path)) != ZP_OK) {
-                fprintf(stderr, "device not found\n");
-                zp_close(&c);
-                return 1;
-            }
-            f = fopen("snapshot.txt", "w");
+        uint32_t base, batch = id_batch ? id_batch : 8;
+        const char *dest = out_path ? out_path : "snapshot.txt";
+        char *temp = malloc(strlen(dest) + sizeof(".XXXXXX"));
+        int fd;
+        if (!temp || batch > 64) {
+            fprintf(stderr, "invalid batch size or allocation failed\n");
+            free(temp);
+            zp_close(&c);
+            return 1;
         }
+        sprintf(temp, "%s.XXXXXX", dest);
+        fd = mkstemp(temp);
+        f = fd < 0 ? NULL : fdopen(fd, "w");
         if (!f) {
             fprintf(stderr, "cannot write the snapshot\n");
+            if (fd >= 0) {
+                close(fd);
+                unlink(temp);
+            }
+            free(temp);
             zp_close(&c);
             return 1;
         }
         fprintf(f, "# id type value\n");
-        for (base = 0; base < ZP_PARAM_COUNT; base += 64) {
-            uint32_t k, nb = 64;
+        for (base = 0; base < ZP_PARAM_COUNT; base += batch) {
+            uint32_t k, nb = batch;
             size_t rlen2 = 0, n = 0;
             if (base + nb > ZP_PARAM_COUNT)
                 nb = ZP_PARAM_COUNT - base;
@@ -313,22 +343,46 @@ int main(int argc, char **argv)
                 ids[n++] = (uint16_t)(base + k);
             if (zp_id_query(&c, ids, n, reply, sizeof(reply), &rlen2) != ZP_OK) {
                 fprintf(stderr, "query failed at 0x%04x\n", base);
+                rc = 1;
+                break;
+            }
+            if (rlen2 != n * ZP_ID_RECORD_BYTES) {
+                fprintf(stderr, "incomplete reply at 0x%04x\n", base);
+                rc = 1;
                 break;
             }
             for (k = 0; k + ZP_ID_VALUE_BYTES <= rlen2; k += ZP_ID_VALUE_BYTES) {
-                uint16_t val =
-                    (uint16_t)(reply[k + 2] | ((uint32_t)reply[k + 3] << 8));
-                if (val)
-                    fprintf(f, "%04x %04x %04x\n", (unsigned)(base + k / 4),
-                            val, val);
+                /* Reply records are big endian (id, value), like the query. */
+                uint16_t echo = (uint16_t)((reply[k] << 8) | reply[k + 1]);
+                uint16_t val = (uint16_t)(((uint32_t)reply[k + 2] << 8) |
+                                          reply[k + 3]);
+                if (echo != base + k / 4) {
+                    fprintf(stderr, "unexpected reply id 0x%04x\n", echo);
+                    rc = 1;
+                    break;
+                }
+                fprintf(f, "%04x %04x %04x\n", echo, val, val);
             }
+            if (rc)
+                break;
             printf("\rsnapshot 0x%04x..0x%04x", base, base + nb - 1);
             fflush(stdout);
         }
-        fclose(f);
-        printf("\nsnapshot written\n");
+        if (ferror(f))
+            rc = 1;
+        if (fclose(f) != 0)
+            rc = 1;
+        if (!rc && rename(temp, dest) != 0)
+            rc = 1;
+        if (rc) {
+            unlink(temp);
+            fprintf(stderr, "snapshot failed; destination unchanged\n");
+        } else {
+            printf("\nsnapshot written: %u ids\n", ZP_PARAM_COUNT);
+        }
+        free(temp);
         zp_close(&c);
-        return 0;
+        return rc;
     }
     if (!strcmp(cmd, "get")) {
         size_t rlen2 = 0;
@@ -349,9 +403,10 @@ int main(int argc, char **argv)
         printf("  %-9s %-9s %-11s %-8s  %s\n", "req_id", "echo_id", "value",
                "signed", "raw");
         for (i = 0; i + ZP_ID_VALUE_BYTES <= rlen2; i += ZP_ID_VALUE_BYTES) {
-            uint16_t echo = (uint16_t)(reply[i] | ((uint32_t)reply[i + 1] << 8));
+            uint16_t echo =
+                (uint16_t)(((uint32_t)reply[i] << 8) | reply[i + 1]);
             uint16_t val =
-                (uint16_t)(reply[i + 2] | ((uint32_t)reply[i + 3] << 8));
+                (uint16_t)(((uint32_t)reply[i + 2] << 8) | reply[i + 3]);
             uint16_t id = (i / ZP_ID_VALUE_BYTES < nids)
                               ? ids[i / ZP_ID_VALUE_BYTES]
                               : 0;
@@ -399,9 +454,9 @@ int main(int argc, char **argv)
                 shortrep++;
             for (k = 0; k + ZP_ID_VALUE_BYTES <= rlen2; k += ZP_ID_VALUE_BYTES) {
                 uint16_t echo =
-                    (uint16_t)(reply[k] | ((uint32_t)reply[k + 1] << 8));
+                    (uint16_t)(((uint32_t)reply[k] << 8) | reply[k + 1]);
                 uint16_t val =
-                    (uint16_t)(reply[k + 2] | ((uint32_t)reply[k + 3] << 8));
+                    (uint16_t)(((uint32_t)reply[k + 2] << 8) | reply[k + 3]);
                 int h;
                 if (echo != (uint16_t)(base + k / 4))
                     printf("\n    id 0x%04x ECHO MISMATCH 0x%04x\n",

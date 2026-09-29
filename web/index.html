@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZP 8.4 AMP - DSP Editor Web</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>ZP 8.4 AMP <span>DSP Editor Web</span></h1>
+  <div class="actions">
+    <span id="status" class="status">Terputus</span>
+    <button id="btn-connect" class="btn primary">Connect</button>
+    <button id="btn-read" class="btn">Baca DSP</button>
+  </div>
+</header>
+
+<div id="progress" class="hidden">
+  <div id="progress-bar"></div>
+  <span id="progress-text"></span>
+</div>
+
+<nav id="channels"></nav>
+
+<main>
+  <section class="eq-panel">
+    <canvas id="eq"></canvas>
+    <div id="band-info" class="band-info">Geser titik band untuk mengubah gain</div>
+  </section>
+
+  <aside class="side">
+    <div class="card">
+      <h2>Crossover</h2>
+      <div class="row">
+        <label>HPF</label>
+        <input type="number" id="hp-freq" min="10" max="23000" step="1">
+        <span class="unit">Hz</span>
+      </div>
+      <div class="row">
+        <label>LPF</label>
+        <input type="number" id="lp-freq" min="10" max="23000" step="1">
+        <span class="unit">Hz</span>
+      </div>
+      <div class="row">
+        <label>Tipe</label>
+        <select id="xover-family">
+          <option value="0">Butter-W</option>
+          <option value="1">Bessel</option>
+          <option value="2">Link_R</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Slope</label>
+        <select id="xover-slope">
+          <option value="8">OFF</option>
+          <option value="0">6 dB/oct</option>
+          <option value="1">12 dB/oct</option>
+          <option value="2">18 dB/oct</option>
+          <option value="3">24 dB/oct</option>
+          <option value="4">30 dB/oct</option>
+          <option value="5">36 dB/oct</option>
+          <option value="6">42 dB/oct</option>
+          <option value="7">48 dB/oct</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Channel</h2>
+      <div class="row">
+        <label>Level</label>
+        <input type="range" id="ch-level" min="0" max="60" step="0.5" value="0">
+        <span id="ch-level-val" class="val">--</span>
+      </div>
+      <div class="row">
+        <label>Delay</label>
+        <input type="range" id="ch-delay" min="0" max="20" step="0.01" value="0">
+        <span id="ch-delay-val" class="val">--</span>
+      </div>
+      <div class="row btns">
+        <button id="ch-phase" class="btn small">Fase 0'</button>
+        <button id="ch-mute" class="btn small">Mute</button>
+        <button id="ch-reset-eq" class="btn small">Reset EQ</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Input</h2>
+      <div class="row btns" id="input-btns">
+        <button class="btn small" data-src="1">AUX</button>
+        <button class="btn small" data-src="2">Bluetooth</button>
+        <button class="btn small" data-src="3">High level</button>
+        <button class="btn small" data-src="7">USB media</button>
+      </div>
+      <div class="row">
+        <label>USB vol</label>
+        <input type="range" id="usb-vol" min="0" max="100" step="1" value="0">
+        <span id="usb-vol-val" class="val">--</span>
+      </div>
+      <div class="row">
+        <label>BT vol</label>
+        <input type="range" id="bt-vol" min="0" max="100" step="1" value="0">
+        <span id="bt-vol-val" class="val">--</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Master</h2>
+      <div class="row">
+        <label>Volume</label>
+        <input type="range" id="master-vol" min="0" max="60" step="0.5" value="0">
+        <span id="master-vol-val" class="val">--</span>
+      </div>
+      <div class="row">
+        <label>Noise gate</label>
+        <select id="noise-gate"></select>
+      </div>
+    </div>
+
+    <details class="card">
+      <summary>Mixer</summary>
+      <div id="mixer"></div>
+    </details>
+  </aside>
+</main>
+
+<section class="bands">
+  <table id="band-table">
+    <thead>
+      <tr><th>Band</th><th>Freq (Hz)</th><th>Q</th><th>Gain (dB)</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<div id="toast" class="hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

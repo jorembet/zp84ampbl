@@ -25,8 +25,9 @@ extern "C" {
 #define ZP_INNER_OVERHEAD (ZP_INNER_HDR + ZP_INNER_CRC)
 #define ZP_INNER_LEN_MAX 250
 
-/* CMD_BLOCK reads or writes a 256 byte page at a 16-bit address.
-   payload = addr[3] big endian, then 256 bytes. total 259. */
+/* CMD_BLOCK reads or writes a 256 byte page at a 24-bit address.
+   payload = addr[3] big endian, then 256 bytes. total 259.
+   (For the 16-bit addresses used here the first byte is 0.) */
 #define ZP_CMD_BLOCK 0xFF
 #define ZP_BLOCK_SIZE 256
 #define ZP_BLOCK_ADDR_BYTES 3
@@ -92,6 +93,9 @@ typedef struct {
     uint32_t last_error;
     uint32_t last_rx;
     uint32_t last_tx;
+    /* errno from the last failed open/read/write (0 if none/not applicable),
+       so callers can print the real reason with strerror(). */
+    int last_errno;
 } zp_conn;
 
 int zp_find_hidraw(char *out, size_t out_len);
@@ -106,6 +110,10 @@ int zp_frame_unpack(const uint8_t *frame, size_t avail, uint8_t *payload,
 uint16_t zp_crc16_modbus(const uint8_t *buf, size_t len);
 size_t zp_inner_pack(const uint8_t *payload, size_t len, uint8_t cmd,
                      uint8_t *out, size_t out_cap);
+/* Unpack one inner frame. When the length byte is 0xFF (payloads >= 250
+   bytes) the true size comes from the outer HID frame, so avail must be
+   exactly the outer payload length (L = payload + 5), which is what
+   zp_recv passes. */
 int zp_inner_unpack(const uint8_t *in, size_t avail, uint8_t *cmd,
                     uint8_t *payload, size_t out_cap, size_t *payload_len);
 
@@ -121,12 +129,18 @@ int zp_block_write(zp_conn *c, uint16_t addr, const uint8_t *data,
                    size_t len);
 int zp_byte_write(zp_conn *c, uint8_t value);
 
-/* CMD_ID takes a list of 16 bit parameter ids and returns one 32 bit value
-   per id, in order. Confirmed on hardware: 2 bytes in, 4 bytes out. */
+/* CMD_ID takes a list of 16 bit parameter ids, big endian on the wire,
+   and returns one 4 byte big endian (id, value) record per id, in order.
+   Confirmed on hardware and against the vendor tool's reply handler
+   (0x41f342), which reads both halves big endian. */
 #define ZP_ID_BYTES 2
 #define ZP_ID_VALUE_BYTES 4
+#define ZP_ID_RECORD_BYTES 4
 int zp_id_query(zp_conn *c, const uint16_t *ids, size_t count, uint8_t *out,
                 size_t out_cap, size_t *out_len);
+
+/* Write one parameter using cmd 03; require echo acknowledgement and readback. */
+int zp_id_write(zp_conn *c, uint16_t id, uint16_t value);
 
 int zp_write_report(zp_conn *c, const uint8_t *report);
 int zp_read_report(zp_conn *c, uint8_t *report);

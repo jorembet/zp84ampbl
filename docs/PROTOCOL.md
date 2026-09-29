@@ -155,12 +155,13 @@ So the register map is a flat 1934 byte block. Mapping it means finding which
 offset holds which knob.
 
 **`0x06` — parameter id query.** Verified on hardware. The payload is a list
-of 16 bit parameter ids; the reply carries one 32 bit value per id, in order.
-Two input bytes produce four output bytes, and the exchange repeats:
+of 16 bit parameter ids **in big endian order**; the reply carries one
+4 byte big endian `(id, value)` record per id, in order. Two input bytes
+produce four output bytes, and the exchange repeats:
 
 ```
 send  06 len=2  payload 00 00
-recv  06 len=4  00 00 23 20
+recv  06 len=4  00 00 23 20      (id 0x0000, value 0x2320)
 ```
 
 Measured reply sizes: len 1 -> 4, 2 -> 4, 3 -> 8, 4 -> 8, 5 -> 12,
@@ -178,6 +179,11 @@ sites: a 16 bit id space with `0x0FFF` as the sentinel.
 
 Verified further on hardware: the echo is exact for every id tested, and
 batching works. Eight ids in one request returns 32 bytes as expected.
+(Both halves are big endian: the vendor reply handler at `0x41f342` reads
+`id = b[0]<<8|b[1]` and `value = b[2]<<8|b[3]`, so requests must be packed
+big endian too. An earlier build packed them little endian; the echo still
+matched because it reflects the raw bytes, but every non-zero id addressed
+`id*256` on the device and the values came back byte-swapped.)
 
 ### The parameter table
 
@@ -241,22 +247,17 @@ default at `0x41f751`:
 | `0x21` | 6 | `0x41f60a` | sets a 0x21 length then falls through to the record loop |
 | default | 11 | `0x41f751` | ignored |
 
-What lives at each id is still open. In the range 0x0000-0x003f only six ids
-are non-zero:
+What lives at each id is still open. An earlier scan of `0x0000`-`0x003f`
+used little endian request packing, so it actually probed device ids
+`0x0000`, `0x0100`, … `0x3F00` and its values were byte-swapped; treat those
+rows as superseded and re-scan with the fixed tooling:
 
-| id | value |
-|---|---|
-| `0x0000` | `0x2023` (8227) |
-| `0x0001` | `0x1702` (5890) |
-| `0x0002`, `0x0003`, `0x0004` | `0xf401` (-3071) |
-| `0x0007` | `0x0700` (1792) |
+| raw reply bytes | id (BE) | value (BE) |
+|---|---|---|
+| `00 00 23 20` | `0x0000` | `0x2320` (8992) |
 
-Three different ids returning the identical `0xf401` means those ids share
-a type while carrying the same value, which fits a table of parameter
-definitions rather than a set of live measurements. `0x0700` at id 7 is
-consistent with a capability bitmask (bits 8, 9, 10 set). The `type` field is
-now confirmed to exist and to be 16 bit, so these numbers are that field, but
-which knob each id maps to is still unknown.
+The one solid reading is id `0x0000` = `0x2320`. Which knob each id maps
+to is still unknown.
 
 ```sh
 sudo ./build/zpsniff get --id 0x0000 --id 0x0001 --id 0x0002
@@ -309,24 +310,26 @@ Approaches, in order of preference:
 ## Tooling
 
 ```sh
-make                    # builds build/zpsniff
-make test               # 68 checks, no device required
-sudo ./scripts/install-udev.sh    # grants access to /dev/hidraw7
+make                    # builds build/zpsniff and build/zp84gui
+make test               # checks, no device required
+sudo ./scripts/install-udev.sh    # grants access to /dev/hidraw* + /dev/zp84amp
 ```
 
-`zpsniff` speaks the real framing:
+`zpsniff` speaks the real framing (`find` also reports read/write access,
+`diff` works offline without the device):
 
 ```sh
 ./build/zpsniff find
-./build/zpsniff ping                      # empty frame, see if anything replies
+./build/zpsniff ping                      # vendor 0x06 handshake
+sudo ./build/zpsniff ping                 # if find reports no access
 ./build/zpsniff xfer -i cmd.bin           # send a payload, print the reply
 ./build/zpsniff xfer --hex "01 02 03"     # inline payload
 ./build/zpsniff raw -i bytes.bin           # bypass framing entirely
 ```
 
-`tools/zpdecode.py` decodes a usbmon text capture, and
-`tools/diffdump.py` diffs two response captures. Both still assume the older
-CMD_T layout and need updating once the payload format is known.
+`tools/zpdecode.py` decodes a usbmon text capture but still assumes the older
+CMD_T layout and needs updating once the payload format is known.
+`tools/diffdump.py` diffs two `dump`/`block` captures region by region.
 
 ```sh
 ./build/zpsniff ping --cmd 0x06             # handshake / status poll

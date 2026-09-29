@@ -18,6 +18,7 @@ make -s tools || { echo "build failed" >&2; exit 1; }
 
 echo
 echo "done. verify with:"
-echo "  ls -l /dev/zp84amp /dev/hidraw7"
-echo "  tools/zpsniff find"
-echo "  tools/zpsniff probe --cmd 0xD2 --page 0 --pages 1"
+echo "  ls -l /dev/zp84amp /dev/hidraw*"
+echo "  ./build/zpsniff find"
+echo "  sudo ./build/zpsniff ping"
+echo "  sudo ./build/zpsniff get --id 0x0000 --id 0x0001"

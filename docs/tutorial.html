@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Tutorial - ZP 8.4 AMP DSP Configuration Tool</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#1a1a2e;color:#e0e0e0;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+.vc{flex:1;display:flex;flex-direction:column;max-width:1280px;margin:0 auto;width:100%;padding:20px}
+.vh{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;background:#16213e;border-radius:10px 10px 0 0;border-bottom:2px solid #0f3460}
+.vh h1{font-size:1.2em;color:#00d4ff}
+.ci{font-size:.85em;color:#888}
+.sa{flex:1;background:#0f3460;border-radius:0 0 10px 10px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.sl{display:none;width:100%;height:100%;padding:30px;overflow-y:auto}
+.sl.active{display:flex;flex-direction:column}
+.sl h2{font-size:1.8em;color:#00d4ff;margin-bottom:15px;text-align:center}
+.sl h3{font-size:1.2em;color:#e94560;margin:12px 0 8px}
+.sl p,.sl li{font-size:1em;line-height:1.7;margin-bottom:8px}
+.sl ul,.sl ol{margin-left:25px;margin-bottom:12px}
+.sl li{margin-bottom:6px}
+.hb{background:#16213e;border-left:4px solid #00d4ff;padding:12px 18px;margin:12px 0;border-radius:0 8px 8px 0}
+.cb{background:#0a0a1a;border:1px solid #333;border-radius:8px;padding:12px 18px;margin:12px 0;font-family:'Courier New',monospace;font-size:.9em;color:#00ff88;overflow-x:auto;white-space:pre}
+.fg{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:15px 0}
+.fc{background:#16213e;border:1px solid #0f3460;border-radius:10px;padding:15px;transition:transform .3s,border-color .3s}
+.fc:hover{transform:translateY(-3px);border-color:#00d4ff}
+.fc h4{color:#00d4ff;margin-bottom:6px;font-size:1em}
+.fc p{font-size:.85em;color:#aaa;margin:0}
+.cg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:15px 0}
+.cc{background:#16213e;border:2px solid #0f3460;border-radius:8px;padding:12px;text-align:center;transition:all .3s}
+.cc:hover{border-color:#e94560;background:#1a2a4a}
+.cc .n{font-size:1.8em;font-weight:bold;color:#00d4ff}
+.cc .l{font-size:.8em;color:#888;margin-top:4px}
+.screenshot{width:100%;border-radius:10px;border:2px solid #0f3460;margin:15px 0;box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.screenshot img{width:100%;border-radius:8px;display:block}
+.ss-label{text-align:center;font-size:.85em;color:#888;margin-top:-10px;margin-bottom:15px}
+.ctl{display:flex;justify-content:center;align-items:center;gap:15px;padding:12px;background:#16213e;border-radius:10px;margin-top:12px}
+.cb2{background:#0f3460;border:2px solid #00d4ff;color:#00d4ff;padding:8px 22px;border-radius:25px;cursor:pointer;font-size:.95em;transition:all .3s}
+.cb2:hover{background:#00d4ff;color:#0f3460}
+.cb2:disabled{opacity:.3;cursor:not-allowed}
+.cb2:disabled:hover{background:#0f3460;color:#00d4ff}
+.sc{color:#888;font-size:.85em;min-width:70px;text-align:center}
+.nb{background:#16213e;border-radius:10px;padding:12px 18px;margin-top:12px;border:1px solid #0f3460}
+.nb .lb{font-size:.7em;color:#e94560;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.nb .tx{font-size:.9em;line-height:1.5;color:#ccc;font-style:italic}
+.tl{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.tl-i{background:#0f3460;padding:4px 10px;border-radius:12px;font-size:.7em;color:#888;cursor:pointer;transition:all .3s}
+.tl-i:hover,.tl-i.active{background:#00d4ff;color:#0f3460}
+.sd{display:flex;justify-content:center;align-items:center;gap:20px;margin:15px 0;padding:15px;background:#16213e;border-radius:10px}
+.si{width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2em;border:3px solid}
+.si.t{border-color:#00d4ff;color:#00d4ff}
+.si.w{border-color:#e94560;color:#e94560}
+.si.m{border-color:#00ff88;color:#00ff88}
+.si.s{border-color:#ffaa00;color:#ffaa00}
+.ar{font-size:1.5em;color:#555}
+.es{text-align:center;justify-content:center;align-items:center}
+.es h2{font-size:2.5em;margin-bottom:20px}
+.es p{font-size:1.1em;color:#888}
+.annotated{position:relative;display:inline-block;width:100%}
+.annotated img{width:100%;border-radius:8px}
+.ann-label{position:absolute;background:rgba(0,0,0,.8);color:#00d4ff;padding:2px 8px;border-radius:4px;font-size:.7em;white-space:nowrap}
+@media(max-width:768px){.fg{grid-template-columns:1fr}.cg{grid-template-columns:repeat(2,1fr)}.sl{padding:15px}.sl h2{font-size:1.3em}}
+</style>
+</head>
+<body>
+<div class="vc">
+<div class="vh">
+<h1>ZP 8.4 AMP DSP Configuration Tool</h1>
+<span class="ci" id="ci">Pendahuluan</span>
+</div>
+<div class="sa" id="sa">
+
+<div class="sl active" data-ch="Pendahuluan" data-t="0:00">
+<h2>Selamat Datang</h2>
+<div class="hb"><p>Tutorial lengkap aplikasi <strong>ZP 8.4 AMP DSP Configuration Tool</strong> — tools open-source untuk mengkonfigurasi amplifier DSP Zevox ZP 8.4 AMP di Linux.</p></div>
+<div class="fg">
+<div class="fc"><h4>31-Band EQ</h4><p>Graphic EQ per channel dengan kontrol gain, frequency, dan Q</p></div>
+<div class="fc"><h4>Crossover</h4><p>Filter Butterworth, Bessel, Linkwitz-Riley dengan slope 6-48 dB/oct</p></div>
+<div class="fc"><h4>Time Alignment</h4><p>Delay per channel dengan visualisasi posisi speaker</p></div>
+<div class="fc"><h4>Mixer Matrix</h4><p>Routing 8 output dengan gain control per input</p></div>
+</div>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Selamat datang dalam video tutorial aplikasi ZP 8.4 AMP DSP Configuration Tool."</div></div>
+</div>
+
+<div class="sl" data-ch="Pendahuluan" data-t="0:30">
+<h2>ZP 8.4 AMP Hardware</h2>
+<div class="sd">
+<div class="si t">CH1-2</div><div class="ar">&rarr;</div>
+<div class="si w">CH3-4</div><div class="ar">&rarr;</div>
+<div class="si m">CH5-6</div><div class="ar">&rarr;</div>
+<div class="si s">CH7-8</div>
+</div>
+<div class="fg">
+<div class="fc"><h4>8 Channel Output</h4><p>CH1-2: Tweeter | CH3-4: Woofer | CH5-6: Midrange | CH7-8: Subwoofer</p></div>
+<div class="fc"><h4>Input Sources</h4><p>AUX, Bluetooth, High level, USB media</p></div>
+<div class="fc"><h4>USB HID</h4><p>Komunikasi konfigurasi via USB (bukan audio)</p></div>
+<div class="fc"><h4>1934 Parameter</h4><p>Semua parameter dibaca dan ditulis ke hardware</p></div>
+</div>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"ZP 8.4 AMP adalah amplifier DSP 8 channel dengan fitur lengkap untuk tuning audio mobil."</div></div>
+</div>
+
+<div class="sl" data-ch="Instalasi" data-t="1:30">
+<h2>Instalasi</h2>
+<h3>Dependencies</h3>
+<ul><li>Linux dengan X11 (libX11)</li><li>C compiler (gcc/cc)</li><li>libm (math library)</li></ul>
+<h3>Build</h3>
+<div class="cb">git clone &lt;repo-url&gt;
+cd zp84-dsp
+make</div>
+<h3>Install</h3>
+<div class="cb">sudo ./scripts/install-udev.sh
+./scripts/install-app.sh</div>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Install dependencies, build dengan make, install udev rules dan aplikasi."</div></div>
+</div>
+
+<div class="sl" data-ch="Instalasi" data-t="4:00">
+<h2>Menjalankan Aplikasi</h2>
+<div class="cb">./build/zp84gui --read-dsp</div>
+<div class="hb"><p>Aplikasi membaca seluruh <strong>1934 parameter ID</strong> dari amplifier.</p></div>
+<h3>Opsi UI Scale</h3>
+<div class="cb">./build/zp84gui --read-dsp --scale 1.5</div>
+<p>Skala: 0.75 - 2.5</p>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Pastikan amplifier terhubung via USB, lalu jalankan aplikasi."</div></div>
+</div>
+
+<div class="sl" data-ch="Tampilan Utama" data-t="5:30">
+<h2>Tampilan Utama</h2>
+<div class="screenshot"><img src="screenshots/main-ui.png" alt="Tampilan utama aplikasi ZP 8.4 AMP DSP"></div>
+<p class="ss-label">Tampilan utama aplikasi — terhubung ke amplifier via USB</p>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Ini adalah tampilan utama aplikasi. Kita bisa melihat semua panel: crossover, grafik EQ, 31-band EQ, diagram posisi speaker, dan 8 channel output."</div></div>
+</div>
+
+<div class="sl" data-ch="Channel & EQ" data-t="8:00">
+<h2>Channel & 31-Band EQ</h2>
+<div class="cg">
+<div class="cc"><div class="n">1</div><div class="l">Tweeter Kiri</div></div>
+<div class="cc"><div class="n">2</div><div class="l">Tweeter Kanan</div></div>
+<div class="cc"><div class="n">3</div><div class="l">Woofer Kiri</div></div>
+<div class="cc"><div class="n">4</div><div class="l">Woofer Kanan</div></div>
+<div class="cc"><div class="n">5</div><div class="l">Midrange Kiri</div></div>
+<div class="cc"><div class="n">6</div><div class="l">Midrange Kanan</div></div>
+<div class="cc"><div class="n">7</div><div class="l">Subwoofer Kiri</div></div>
+<div class="cc"><div class="n">8</div><div class="l">Subwoofer Kanan</div></div>
+</div>
+<h3>Kontrol EQ</h3>
+<ul>
+<li><strong>Drag fader</strong> — atur gain band</li>
+<li><strong>Klik kolom EQ</strong> — pilih band, lihat F/Q/G</li>
+<li><strong>Klik angka</strong> — edit nilai manual</li>
+<li><strong>Reset EQ</strong> — ratakan semua gain</li>
+<li><strong>Restore EQ</strong> — kembalikan nilai sebelum reset</li>
+</ul>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Setiap channel memiliki 31-band graphic EQ. Drag fader untuk atur gain, klik kolom untuk pilih band."</div></div>
+</div>
+
+<div class="sl" data-ch="Crossover" data-t="12:00">
+<h2>Crossover</h2>
+<div class="screenshot"><img src="screenshots/main-ui.png" alt="Panel crossover pada aplikasi ZP 8.4 AMP"></div>
+<p class="ss-label">Panel crossover — HPF/LPF Type, Oct, dan Frequency</p>
+<table>
+<tr><th>Kontrol</th><th>Pilihan</th></tr>
+<tr><td>HPF/LPF Type</td><td>Butterworth, Bessel, Linkwitz-Riley</td></tr>
+<tr><td>HPF/LPF Oct</td><td>6, 12, 18, 24, 30, 36, 42, 48 dB/oct, OFF</td></tr>
+<tr><td>HPF/LPF Frequency</td><td>10 - 23000 Hz</td></tr>
+</table>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Panel crossover mengatur filter high-pass dan low-pass per channel."</div></div>
+</div>
+
+<div class="sl" data-ch="Time Alignment" data-t="15:00">
+<h2>Time Alignment</h2>
+<div class="screenshot"><img src="screenshots/main-ui.png" alt="Diagram posisi speaker untuk time alignment"></div>
+<p class="ss-label">Diagram posisi speaker — drag untuk mengatur delay</p>
+<ul>
+<li>Pilih mode <strong>Mobil</strong> atau <strong>Ruangan</strong></li>
+<li>Drag angka channel untuk atur posisi speaker</li>
+<li>Drag titik <strong>P</strong> untuk posisi dengar</li>
+<li><strong>Jarak/Delay &gt; Atur lebar</strong> — kalibrasi skala</li>
+<li>Klik <strong>Terapkan Delay</strong> untuk kirim ke DSP</li>
+</ul>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Time alignment mengatur delay per channel agar suara tiba bersamaan."</div></div>
+</div>
+
+<div class="sl" data-ch="Mixer" data-t="18:00">
+<h2>Mixer Matrix</h2>
+<div class="screenshot"><img src="screenshots/mixer.png" alt="Panel mixer matrix aplikasi ZP 8.4 AMP"></div>
+<p class="ss-label">Mixer — matriks routing 8 output vs input sources</p>
+<ul>
+<li>Klik <strong>ON/OFF</strong> untuk enable/disable routing</li>
+<li>Klik angka persen untuk edit gain</li>
+<li>Drag slider untuk preview</li>
+</ul>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Mixer mengatur routing input ke output dengan gain control per channel."</div></div>
+</div>
+
+<div class="sl" data-ch="Preset & Memory" data-t="20:00">
+<h2>Preset & Memory</h2>
+<div class="screenshot"><img src="screenshots/memory.png" alt="Panel memory/preset aplikasi ZP 8.4 AMP"></div>
+<p class="ss-label">Memory — 8 slot preset lokal dengan file .scene</p>
+<h3>Simpan Preset</h3>
+<ol>
+<li>Klik <strong>Simpan</strong> pada slot</li>
+<li>Masukkan nama (1-24 karakter)</li>
+<li>Klik <strong>Simpan preset</strong> atau Enter</li>
+</ol>
+<h3>Load Preset</h3>
+<ol>
+<li>Klik <strong>Load</strong> pada baris preset</li>
+<li>Output di-mute selama penerapan</li>
+<li>Status mute dipulihkan setelah selesai</li>
+</ol>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Menu Memory menyediakan 8 slot preset lokal."</div></div>
+</div>
+
+<div class="sl" data-ch="Kontrol Tambahan" data-t="23:00">
+<h2>Kontrol Tambahan</h2>
+<div class="fg">
+<div class="fc"><h4>Link Pairs</h4><p>Hubungkan CH1/2, 3/4, 5/6, 7/8</p></div>
+<div class="fc"><h4>Lock Output</h4><p>Kunci level, phase, mute, delay</p></div>
+<div class="fc"><h4>Mute</h4><p>Ikon speaker = mute channel</p></div>
+<div class="fc"><h4>Input Volume</h4><p>Level USB & Bluetooth 0-100</p></div>
+<div class="fc"><h4>Noise Gate</h4><p>Tingkat 0-20 (0 = OFF)</p></div>
+<div class="fc"><h4>Reset Output</h4><p>Reset channel ke default</p></div>
+</div>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Kontrol tambahan: link pairs, lock output, mute, input volume, noise gate."</div></div>
+</div>
+
+<div class="sl" data-ch="CLI Tool" data-t="25:00">
+<h2>CLI Tool (zpsniff)</h2>
+<div class="cb">./build/zpsniff find          # cari device
+./build/zpsniff ping          # handshake
+./build/zpsniff get --id 139  # baca parameter
+./build/zpsniff snap -o snap.txt  # snapshot semua
+./build/zpsniff diff a.txt b.txt  # bandingkan
+./build/zpsniff dump -o dump.bin  # dump semua</div>
+<div class="nb"><div class="lb">Narasi</div><div class="tx">"Untuk debugging, tersedia CLI tool zpsniff."</div></div>
+</div>
+
+<div class="sl es" data-ch="Penutup" data-t="27:00">
+<h2>Terima Kasih</h2>
+<p>Tutorial lengkap ZP 8.4 AMP DSP Configuration Tool</p>
+<p>Lihat dokumentasi lengkap di folder <code>docs/</code></p>
+</div>
+
+</div>
+
+<div class="ctl">
+<button class="cb2" id="prevBtn" onclick="nav(-1)">&larr; Sebelumnya</button>
+<span class="sc" id="sc">1 / 12</span>
+<button class="cb2" id="nextBtn" onclick="nav(1)">Berikutnya &rarr;</button>
+</div>
+
+<div class="tl" id="tl"></div>
+</div>
+
+<script>
+var slides=document.querySelectorAll('.sl'),cur=0,total=slides.length;
+var chapters=[];
+slides.forEach(function(s,i){
+  var c=s.getAttribute('data-ch'),t=s.getAttribute('data-t');
+  if(chapters.indexOf(c)===-1)chapters.push(c);
+  var el=document.createElement('span');
+  el.className='tl-i'+(i===0?' active':'');
+  el.textContent=t+' '+c;
+  el.onclick=(function(idx){return function(){go(idx)}})(i);
+  document.getElementById('tl').appendChild(el);
+});
+function go(i){
+  if(i<0||i>=total)return;
+  slides[cur].classList.remove('active');
+  document.querySelectorAll('.tl-i')[cur].classList.remove('active');
+  cur=i;
+  slides[cur].classList.add('active');
+  document.querySelectorAll('.tl-i')[cur].classList.add('active');
+  document.getElementById('ci').textContent=slides[cur].getAttribute('data-ch');
+  document.getElementById('sc').textContent=(cur+1)+' / '+total;
+  document.getElementById('prevBtn').disabled=cur===0;
+  document.getElementById('nextBtn').disabled=cur===total-1;
+}
+function nav(d){go(cur+d)}
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight'||e.key===' ')nav(1);
+  if(e.key==='ArrowLeft')nav(-1);
+});
+go(0);
+</script>
+</body>
+</html>
