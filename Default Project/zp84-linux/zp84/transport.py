@@ -132,7 +132,7 @@ class BleTransport(Transport):
     """
     BLE GATT lewat bleak. UUID diambil dari analysis classes.dex APK.
 
-        BleTransport("C0:00:00:0B:91:59:DA")   # nama BT "DSP audio8"
+        BleTransport("C0:00:00:XX:XX:XX")   # nama BT "DSP audio8", isi MAC device kamu
     """
 
     name = "ble"

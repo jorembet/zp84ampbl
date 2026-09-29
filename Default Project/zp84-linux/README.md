@@ -226,7 +226,8 @@ print(zp84.describe(rx) if rx else "tidak ada balasan")
   Memberi UUID `ae00/ae01/ae02` dan SPP `00001101`.
 - **Skin**: 25 PNG di dalam EXE, dibuat Adobe Photoshop CC / ImageReady 2013.
   Lihat `data/skin/` + `zp84-data/README.md` di repo induk.
-- **Bluetooth**: perangkat bernama `DSP audio8`, MAC `C0:00:00:0B:91:59:DA`,
+- **Bluetooth**: perangkat bernama `DSP audio8`, MAC device kamu (disensor di
+  repo ini, contoh `C0:00:00:XX:XX:XX`),
   VID `000105D6` PID `000A`, muncul sebagai SPP `COM4`.
   Tapi Bluetooth di app ini untuk **audio playback**; kontrol DSP lewat USB.
 
