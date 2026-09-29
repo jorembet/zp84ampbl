@@ -105,7 +105,7 @@ src/gui/     the Xlib console: layout, controls, presets, embedded assets
 src/web/     the HTTP server and its inlined UI
 tests/       frame, math, and console data tests
 tools/       zpsniff (C) plus zpdecode.py and diffdump.py
-docs/        protocol notes, console mapping, USB verification, tutorials
+docs/        protocol notes, console mapping, USB verification
 web/         UI assets served by zp84web
 examples     reference captures under "Default Project/"
 ```
@@ -119,8 +119,6 @@ examples     reference captures under "Default Project/"
 - [docs/USB-VERIFICATION.md](docs/USB-VERIFICATION.md) — what was actually
   observed on hardware
 - [docs/DESKTOP-UI.md](docs/DESKTOP-UI.md) — UI behaviour and interaction
-- [docs/VIDEO-TUTORIAL-SCRIPT.md](docs/VIDEO-TUTORIAL-SCRIPT.md) and
-  [docs/tutorial.html](docs/tutorial.html)
 
 ## Tests
 
