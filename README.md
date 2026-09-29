@@ -222,7 +222,7 @@ dan tabel data konsol, semuanya memakai konstanta asli vendor.
 
 ## License
 
-Not yet specified. Add a `LICENSE` file before redistributing.
+MIT, see [LICENSE](LICENSE).
 
 ## Status
 
