@@ -13,6 +13,28 @@ parameter map was confirmed against real hardware.
 | Node | `/dev/hidraw*`, udev symlink `/dev/zp84amp` |
 | Verified on | Linux, x86_64, 29 September 2026 |
 | Language | C11, ~15k lines, Xlib + hidraw |
+| Product page | [voxresearch.id](https://voxresearch.id/katalog/digital-signal-processors/zp-8-4-amp/) |
+
+## Product specifications
+
+Specifications from the [official VOX Research product page](https://voxresearch.id/katalog/digital-signal-processors/zp-8-4-amp/):
+
+- DSP amplifier, 8 channel out with built-in 4 channel amplifier
+- 4 channel high-level input, 2 channel low-level input
+- 8 channel low-level output (RCA)
+- 31-band independent parametric/graphic EQ for 8 channel out
+- Crossover 6–48 dB/octave, Linkwitz-Riley, Butterworth & Bessel
+- Delay: 0.000–20.00 ms, 0.00–692.0 cm, 0.00–273 inch
+- Power output (4 ohm): RMS 25 W x 4 CH
+- Power output (2 ohm): RMS 40 W x 4 CH
+- Peak power output (4 ohm): 60 W x 4 CH
+- Lossless audio player (USB): FLAC, WAV, MP3, WMA, AIFF, APE, M4A, MKA, AU, MPC, ALAC, TTA, OGG, AAC
+- Bluetooth audio player (external BT 5.0 included)
+- Android & iOS audio player app
+- Android & iOS app for DSP setup & tuning
+- AD chip: AKM 5720, DA chip: Cirrus Logic CS4344, DSP chip: ADI BF592, OPAMP: ST TL084
+- OEM plug & play cable (optional)
+- Remote controller ZRC-1 included
 
 ## What it does
 
