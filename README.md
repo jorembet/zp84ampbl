@@ -1,5 +1,11 @@
 # Zevox 8.4 AMP — Linux & Web DSP Editor
 
+<p align="center">
+  <img src="https://voxresearch.id/wp-content/uploads/2021/04/ZP-8.4-AMP-3-web.jpg"
+       alt="Zevox ZP 8.4 AMP"
+       width="400">
+</p>
+
 A native Linux control app for the Zevox ZP 8.4 car amplifier. No vendor
 software, no Electron, no runtime dependencies beyond a C11 compiler and
 Xlib. The USB protocol was recovered from the vendor PC tool and the
