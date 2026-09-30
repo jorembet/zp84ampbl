@@ -19,9 +19,18 @@ parameter map was confirmed against real hardware.
 - **Console mixer layout** mirroring the vendor panel: input and mixer,
   crossover, live EQ curve, 31 band EQ table with faders, channel overlay
   picker, car diagram, master volume, unit delay, and eight output strips.
-- **Reads and writes the amplifier** over USB. Verified parameters include
-  HPF/LPF frequency and filter code, EQ frequency/gain/Q, channel level,
-  phase, and delay.
+- **Reads and writes the amplifier** over USB or Bluetooth. Verified
+  parameters include HPF/LPF frequency and filter code, EQ frequency/gain/Q,
+  channel level, phase, and delay.
+- **Bluetooth (BLE Mango3.0)** as a wireless alternative to USB. The app
+  scans for the amplifier's BLE service, connects via BlueZ, and uses the
+  same parameter read/write protocol over GATT characteristics.
+- **Speaker protection** — per-channel safety profiles that lock crossover,
+  EQ, and level settings to verified limits. Prevents accidental changes
+  that could damage tweeters or subwoofers.
+- **Auto delay distance** — drag speakers on the car/room diagram, calibrate
+  the scale, and the app calculates delay per channel based on distance from
+  the listening position. One click applies all delays to the DSP.
 - **Browser UI** as an alternative front end, served by a single static
   binary on `http://127.0.0.1:8085`.
 - **Local simulation mode** so the UI can be exercised with no amplifier
@@ -34,6 +43,7 @@ parameter map was confirmed against real hardware.
 - Linux with hidraw support
 - gcc or clang, make
 - `libx11-dev` (or equivalent) for the GUI binary
+- Python 3 + `bleak` package for Bluetooth (BLE) support
 - The amplifier, reachable as `/dev/zp84amp` after the udev rule is installed
 
 `zp84web` and `zpsniff` need no X11 at all.
@@ -62,13 +72,13 @@ The install script builds, copies the binaries into `~/.local/bin`,
 registers a desktop entry, and installs the web assets:
 
 ```sh
-./scripts/install-app.sh
+./scripts2/install-app.sh
 ```
 
 Grant access to the amplifier once, as root:
 
 ```sh
-sudo install -m 0644 scripts/99-zp84.rules /etc/udev/rules.d/
+sudo install -m 0644 scripts2/99-zp84.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=hidraw
 ```
@@ -88,6 +98,31 @@ zpsniff snap -o baseline.txt
 `--scale` accepts 0.75 to 2.5. The window is resizable and every panel
 re-lays out proportionally so the 31 EQ columns are never clipped.
 
+## Bluetooth (BLE)
+
+The toolbar has a **Koneksi: USB** / **BLE Mango3.0** toggle. Disconnect
+first if connected, select BLE, click Connect, then Baca DSP. Scanning takes
+about 6 seconds. The computer needs Bluetooth/BlueZ active, Python 3, and
+the `bleak` package. See [docs/BLUETOOTH.md](docs/BLUETOOTH.md).
+
+## Speaker Protection
+
+The **Proteksi speaker** toolbar button opens per-channel limit profiles.
+Lock a channel as tweeter or subwoofer after verifying settings against
+speaker specifications. The app then blocks any edit that would violate
+the locked profile (crossover, EQ gain, levels). Profiles are stored in
+`$HOME/.zp84-protection.conf`. See
+[docs/SPEAKER-PROTECTION.md](docs/SPEAKER-PROTECTION.md).
+
+## Auto Delay Distance
+
+The car/room diagram lets you drag speakers and the listening position (P).
+After calibrating the real-world width, the app previews delay per channel
+based on distance from P to the farthest speaker. Click **Terapkan Delay**
+to write all channel delays to the DSP. Formula:
+`(farthest_distance - channel_distance) / 0.346` ms. See
+[docs/DESKTOP-UI.md](docs/DESKTOP-UI.md) for details.
+
 ## USB permission
 
 The amplifier appears as a vendor HID device with 64-byte interrupt
@@ -100,12 +135,13 @@ and USB carries configuration only.
 
 ```
 src/hid/     hidraw transport and the AE 1E len tag / 80 len cmd .. CRC16 framing
-src/dsp/     biquad design, filter families, fixed point, the autoeq solver
-src/gui/     the Xlib console: layout, controls, presets, embedded assets
+src/ble/     Bluetooth LE worker (Python/BlueZ) and GUI IPC
+src/dsp/     biquad design, filter families, fixed point, response model, autoeq solver
+src/gui/     the Xlib console: layout, controls, presets, bluetooth, protection, embedded assets
 src/web/     the HTTP server and its inlined UI
-tests/       frame, math, and console data tests
+tests/       frame, math, response, BLE, and console data tests
 tools/       zpsniff (C) plus zpdecode.py and diffdump.py
-docs/        protocol notes, console mapping, USB verification
+docs/        protocol notes, console mapping, USB verification, BLE, protection
 web/         UI assets served by zp84web
 examples     reference captures under "Default Project/"
 ```
@@ -119,11 +155,18 @@ examples     reference captures under "Default Project/"
 - [docs/USB-VERIFICATION.md](docs/USB-VERIFICATION.md) — what was actually
   observed on hardware
 - [docs/DESKTOP-UI.md](docs/DESKTOP-UI.md) — UI behaviour and interaction
+- [docs/BLUETOOTH.md](docs/BLUETOOTH.md) — BLE connection, protocol, and
+  verification status
+- [docs/SPEAKER-PROTECTION.md](docs/SPEAKER-PROTECTION.md) — protection
+  profiles, rules, and limitations
+- [docs/FREQUENCY-RESPONSE.md](docs/FREQUENCY-RESPONSE.md) — DSP response
+  model corrections and verification
 
 ## Tests
 
-`make test` runs 46 checks across frame handling, filter maths, and the
-console data tables, all against real vendor constants.
+`make test` runs 50+ checks across frame handling, filter maths, response
+model, BLE protocol, and the console data tables, all against real vendor
+constants.
 
 ---
 
@@ -139,9 +182,18 @@ parameter sudah diverifikasi pada perangkat asli.
 - **Tampilan mixer konsol** mengikuti panel vendor: input dan mixer,
   crossover, grafik EQ, tabel 31 band beserta fader, pemilih channel,
   diagram mobil, master volume, unit delay, dan delapan strip output.
-- **Membaca dan menulis ke amplifier** lewat USB. Parameter terverifikasi
-  mencakup frekuensi dan kode filter HPF/LPF, frekuensi/gain/Q EQ, level,
-  fase, dan delay per channel.
+- **Membaca dan menulis ke amplifier** lewat USB atau Bluetooth. Parameter
+  terverifikasi mencakup frekuensi dan kode filter HPF/LPF, frekuensi/gain/Q
+  EQ, level, fase, dan delay per channel.
+- **Bluetooth (BLE Mango3.0)** sebagai alternatif nirkabel ke USB. Aplikasi
+  memindai layanan BLE amplifier, terhubung via BlueZ, dan memakai protokol
+  baca/tulis parameter yang sama melalui karakteristik GATT.
+- **Proteksi speaker** — profil batas per channel yang mengunci crossover,
+  EQ, dan level sesuai batas terverifikasi. Mencegah perubahan yang bisa
+  merusak tweeter atau subwoofer.
+- **Delay otomatis dari jarak** — geser speaker di diagram mobil/ruangan,
+  kalibrasi skala, dan aplikasi menghitung delay per channel berdasarkan jarak
+  dari posisi dengar. Satu klik menerapkan semua delay ke DSP.
 - **UI browser** sebagai alternatif, dilayani satu binary statis di
   `http://127.0.0.1:8085`.
 - **Mode simulasi lokal** supaya UI bisa dicoba tanpa amplifier terhubung.
@@ -153,6 +205,7 @@ parameter sudah diverifikasi pada perangkat asli.
 - Linux dengan dukungan hidraw
 - gcc atau clang, make
 - `libx11-dev` untuk binary GUI
+- Python 3 + paket `bleak` untuk dukungan Bluetooth (BLE)
 - Amplifier yang sudah muncul sebagai `/dev/zp84amp` setelah aturan udev dipasang
 
 `zp84web` dan `zpsniff` tidak butuh X11 sama sekali.
@@ -172,13 +225,13 @@ manifest [`SHA256SUMS`](release/SHA256SUMS).
 ## Instalasi
 
 ```sh
-./scripts/install-app.sh
+./scripts2/install-app.sh
 ```
 
 Izin akses amplifier, sekali jalan sebagai root:
 
 ```sh
-sudo install -m 0644 scripts/99-zp84.rules /etc/udev/rules.d/
+sudo install -m 0644 scripts2/99-zp84.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=hidraw
 ```
@@ -195,6 +248,31 @@ zpsniff ping                # cek amplifier merespons
 zpsniff snap -o baseline.txt
 ```
 
+## Bluetooth (BLE)
+
+Toolbar punya tombol **Koneksi: USB** / **BLE Mango3.0**. Disconnect dulu
+jika sedang terhubung, pilih BLE, klik Connect, lalu Baca DSP. Pemindaian
+sekitar 6 detik. Komputer memerlukan Bluetooth/BlueZ aktif, Python 3, dan
+paket `bleak`. Lihat [docs/BLUETOOTH.md](docs/BLUETOOTH.md).
+
+## Proteksi Speaker
+
+Tombol **Proteksi speaker** di toolbar membuka profil batas per channel.
+Kunci channel sebagai tweeter atau subwoofer setelah memverifikasi setelan
+sesuai spesifikasi speaker. Aplikasi then memblokir edit yang melanggar
+profil terkunci (crossover, gain EQ, level). Profil tersimpan di
+`$HOME/.zp84-protection.conf`. Lihat
+[docs/SPEAKER-PROTECTION.md](docs/SPEAKER-PROTECTION.md).
+
+## Delay Otomatis dari Jarak
+
+Diagram mobil/ruangan memungkinkan menggambar speaker dan posisi dengar (P).
+Setelah kalibrasi lebar dunia nyata, aplikasi menampilkan preview delay
+per channel berdasarkan jarak dari P ke speaker terjauh. Klik
+**Terapkan Delay** untuk menulis semua delay channel ke DSP. Rumus:
+`(jarak_terjauh - jarak_channel) / 0.346` ms. Lihat
+[docs/DESKTOP-UI.md](docs/DESKTOP-UI.md) untuk detail.
+
 ## Catatan penting
 
 Batas throughput USB adalah 64 KB/s, jadi **audio tidak bisa mengalir lewat
@@ -210,11 +288,18 @@ konfigurasi.
 - [docs/USB-VERIFICATION.md](docs/USB-VERIFICATION.md) — apa yang benar-benar
   diamati di perangkat
 - [docs/DESKTOP-UI.md](docs/DESKTOP-UI.md) — perilaku dan interaksi UI
+- [docs/BLUETOOTH.md](docs/BLUETOOTH.md) — koneksi BLE, protokol, dan
+  status verifikasi
+- [docs/SPEAKER-PROTECTION.md](docs/SPEAKER-PROTECTION.md) — profil proteksi,
+  aturan, dan batasan
+- [docs/FREQUENCY-RESPONSE.md](docs/FREQUENCY-RESPONSE.md) — koreksi model
+  respons DSP dan verifikasi
 
 ## Test
 
-`make test` menjalankan 46 pemeriksaan covering frame, matematika filter,
-dan tabel data konsol, semuanya memakai konstanta asli vendor.
+`make test` menjalankan 50+ pemeriksaan covering frame, matematika filter,
+model respons, protokol BLE, dan tabel data konsol, semuanya memakai
+konstanta asli vendor.
 
 ---
 
