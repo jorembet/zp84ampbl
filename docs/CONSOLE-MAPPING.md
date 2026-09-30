@@ -41,8 +41,9 @@ memiliki 208 untuk CH7–8, ditampilkan 0.208 ms, cocok dengan screenshot.
 
 ## Batas
 
-Bypass EQ belum dipetakan. Jangan
-mengisi nilai tersebut dari screenshot lama. Kurva menampilkan model EQ dan
+EQ enable menggunakan USB ID 65 + channel (indeks nol): 0 bypass, nonzero aktif.
+Jenis EQ pada ID 146 + 136*channel + 4*band: 5 high shelf, 6 low shelf, 7 peaking.
+Mapping berdasarkan APK f/a.java, BTService.s, d/c.java dan chart/c.java. Kurva menampilkan model EQ dan
 crossover Butterworth/Linkwitz–Riley 48 kHz, bukan pengukuran audio.
 Bessel tidak dimodelkan. Kode filter dan OFF telah diterjemahkan berdasarkan
 resource APK; lihat [DESKTOP-UI.md](DESKTOP-UI.md).

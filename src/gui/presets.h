@@ -118,9 +118,14 @@ static void preset_restore(int slot)
     fclose(f);
     for(int id=0;id<ZP_PARAM_COUNT;id++)if(preset_mapped(id)&&!seen[id])valid=0;
     if(!valid){snprintf(A.console_notice,sizeof(A.console_notice),"Preset rusak/tidak didukung. Tidak ada perubahan dikirim.");return;}
+    uint16_t candidate[ZP_PARAM_COUNT];memcpy(candidate,A.dsp_values,sizeof(candidate));
+    for(int id=0;id<ZP_PARAM_COUNT;id++)if(seen[id])candidate[id]=values[id];
+    for(int ch=0;ch<8;ch++)if(!protection_channel_valid(ch,candidate))return;
+    for(int id=0;id<ZP_PARAM_COUNT;id++)if(seen[id]&&!protection_check(id,values[id]))return;
     int changed=0;
     for(int id=0;id<ZP_PARAM_COUNT;id++)if(seen[id]&&values[id]!=A.dsp_values[id])changed++;
     if(!changed){snprintf(A.console_notice,sizeof(A.console_notice),"Preset %d sudah aktif.",slot+1);return;}
+    link_output=0; /* A scene may intentionally contain different L/R settings. */
     /* Mute first, restore desired mute state only after every setting succeeds. */
     memset(eq_undo_valid,0,sizeof(eq_undo_valid));
     int done=0;

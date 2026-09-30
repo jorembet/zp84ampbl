@@ -19,7 +19,9 @@
 #include <unistd.h>
 
 #include "../dsp/design.h"
+#include "../dsp/response.h"
 #include "../hid/zp_hid.h"
+#include "bluetooth.h"
 
 #define WIN_W 1240
 #define WIN_H 800
@@ -87,6 +89,7 @@ typedef struct {
     int dsp_view, dsp_page, dsp_reading, dsp_next, dsp_valid;
     int delay_unit, console_band, console_modal;
     unsigned int overlay_mask;
+    int response_mode;
     char console_notice[160];
     char dsp_status[160];
     char dsp_time[32];
@@ -111,7 +114,7 @@ static void draw(void);
 
 static int g_quit;
 
-static const char *CH_ROLE[8] = {"FL-Tweeter", "FR-Tweeter", "FL-Woofer", "FR-Woofer",
+static char CH_ROLE[8][25] = {"FL-Tweeter", "FR-Tweeter", "FL-Woofer", "FR-Woofer",
                                  "FL-Midrange", "FR-Midrange", "L-Subwoofer", "R-Subwoofer"};
 
 static const int SLOPES[] = {12, 24, 48};
@@ -513,7 +516,7 @@ static void draw(void)
     for (i = 0; i < 8; i++) {
         char lbl[64];
         int by = PLOT_Y + 4 + i * 46;
-        snprintf(lbl, sizeof(lbl), "CH%d  %s", i + 1, CH_ROLE[i]);
+        snprintf(lbl, sizeof(lbl), "CH%d  %.24s", i + 1, CH_ROLE[i]);
         draw_button(PAD, by, 166, 40, lbl, i == A.cur_ch, 0);
     }
 
@@ -607,6 +610,8 @@ static void sync_model(void)
 
 static void do_connect(void)
 {
+    if(bluetooth_pending){zp_close(&A.conn);unlock_device();snprintf(A.console_notice,sizeof(A.console_notice),"Koneksi Bluetooth dibatalkan.");A.need_draw=1;return;}
+    link_output=0;
     fader_kind=0;
     memset(eq_undo_valid,0,sizeof(eq_undo_valid));
     char path[256];
@@ -620,7 +625,7 @@ static void do_connect(void)
         logline("disconnected");
         return;
     }
-    if (zp_find_hidraw(path, sizeof(path)) != ZP_OK) {
+    if (!bluetooth_selected && zp_find_hidraw(path, sizeof(path)) != ZP_OK) {
         snprintf(A.console_notice,sizeof(A.console_notice),"USB tidak ditemukan. Sambungkan amplifier lalu Connect.");
         logline("device not found (VID %04x PID %04x)", ZP_USB_VID, ZP_USB_PID);
         return;
@@ -633,7 +638,8 @@ static void do_connect(void)
             return;
         }
     }
-    if (zp_open(&A.conn, path) != ZP_OK) {
+    if ((bluetooth_selected?bluetooth_open(&A.conn):zp_open(&A.conn, path)) != ZP_OK) {
+        if(bluetooth_selected){snprintf(A.console_notice,sizeof(A.console_notice),"Mango3.0 gagal terhubung. Nyalakan Bluetooth, tutup aplikasi vendor; perlu Python bleak.");unlock_device();return;}
         int e = A.conn.last_errno;
         snprintf(A.console_notice,sizeof(A.console_notice),"USB gagal dibuka: %s",e?strerror(e):"periksa koneksi");
         logline("open %s failed: %s", path,
@@ -643,6 +649,7 @@ static void do_connect(void)
         unlock_device();
         return;
     }
+    if(bluetooth_selected){A.dsp_valid=0;snprintf(A.console_notice,sizeof(A.console_notice),"Mencari Mango3.0 dan memeriksa DSP... Klik Batal koneksi untuk membatalkan.");A.need_draw=1;return;}
     {
         uint8_t req[2] = {0, 0}, rep[64];
         size_t rl = 0;
@@ -651,12 +658,12 @@ static void do_connect(void)
             ZP_OK) {
             A.connected = 1;
             A.dsp_valid=0;
-            snprintf(A.console_notice,sizeof(A.console_notice),"USB terhubung. Klik Baca DSP untuk mengaktifkan kontrol.");
+            snprintf(A.console_notice,sizeof(A.console_notice),"%s terhubung. Klik Baca DSP untuk mengaktifkan kontrol.",bluetooth_selected?"Mango3.0 BLE":"USB");
             logline("connected: 0x06 replied %zu byte(s)", rl);
         } else {
             zp_close(&A.conn);
             unlock_device();
-            snprintf(A.console_notice,sizeof(A.console_notice),"USB tidak merespons. Periksa amplifier lalu Connect kembali.");
+            snprintf(A.console_notice,sizeof(A.console_notice),"%s tidak merespons. Periksa amplifier lalu Connect kembali.",bluetooth_selected?"Mango3.0":"USB");
             logline("opened but no reply to 0x06");
         }
     }
@@ -664,13 +671,15 @@ static void do_connect(void)
 
 static void do_readids(void)
 {
+    link_output=0;
     if (!A.dsp_view) A.dsp_view = 2;
     A.dragging = -1;
     fader_kind=0;
-    if (A.dsp_reading)
+    if (A.dsp_reading||bluetooth_pending)
         return;
     if (!A.connected)
         do_connect();
+    if(bluetooth_pending)return;
     if (!A.connected) {
         snprintf(A.dsp_status, sizeof(A.dsp_status), "Tidak bisa terhubung. %.137s",
                  A.nlog ? A.log[A.nlog - 1] : "Periksa USB.");
@@ -689,8 +698,9 @@ static void read_dsp_batch(void)
     uint8_t rep[DSP_READ_BATCH * ZP_ID_RECORD_BYTES];
     size_t len = 0;
     int count = ZP_PARAM_COUNT - A.dsp_next;
-    if (count > DSP_READ_BATCH)
-        count = DSP_READ_BATCH;
+    int batch=A.conn.custom_xfer?3:DSP_READ_BATCH;
+    if (count > batch)
+        count = batch;
     for (int i = 0; i < count; i++)
         ids[i] = (uint16_t)(A.dsp_next + i);
     int result = zp_id_query(&A.conn, ids, (size_t)count, rep, sizeof(rep), &len);
@@ -711,9 +721,14 @@ static void read_dsp_batch(void)
                  "Gagal pada ID 0x%04X: %s. Snapshot terakhir dipertahankan.",
                  A.dsp_next, zp_strerror((uint32_t)result));
         A.dsp_reading = 0;
-        zp_close(&A.conn);
-        A.connected = 0;
-        unlock_device();
+        if(result==ZP_ERR_TIMEOUT&&A.conn.custom_xfer&&A.conn.fd>=0) {
+            A.dsp_valid = 0;
+            snprintf(A.console_notice,sizeof(A.console_notice),"Balasan DSP timeout; BLE tetap terhubung. Klik Baca DSP untuk ulang; kontrol menunggu snapshot lengkap.");
+        } else {
+            zp_close(&A.conn);
+            A.connected = 0;
+            unlock_device();
+        }
     } else {
         A.dsp_next += count;
         snprintf(A.dsp_status, sizeof(A.dsp_status), "Membaca %d/%d parameter...",
@@ -728,6 +743,7 @@ static void read_dsp_batch(void)
                 strftime(A.dsp_time, sizeof(A.dsp_time), "%Y-%m-%d %H:%M:%S", &local);
             snprintf(A.dsp_status, sizeof(A.dsp_status),
                      "Berhasil membaca %d/%d parameter dari USB.", ZP_PARAM_COUNT, ZP_PARAM_COUNT);
+            for(int ch=0;ch<8;ch++)if(!protection_channel_valid(ch,A.dsp_values))break;
         }
     }
     A.need_draw = 1;
@@ -965,6 +981,8 @@ static void handle_event(XEvent *ev)
         break;
     case KeyPress: {
         KeySym ks = XLookupKeysym(&ev->xkey, 0);
+        if(A.dsp_view==2&&!A.console_modal&&ks==XK_F2){A.response_mode=(A.response_mode+1)%ZP_RESPONSE_MODES;A.need_draw=1;break;}
+        if(A.dsp_view==2&&!A.console_modal&&ks==XK_F3){console_response_log();A.need_draw=1;break;}
         if(ks==XK_F11){fader_kind=0;layout_cancel();window_toggle(1);break;}
         if(ks==XK_Escape&&A.fullscreen&&!A.console_modal&&!fader_kind&&(!layout.ready||layout.dragging<0)){window_toggle(1);break;}
         if(layout.ready&&layout.dragging>=0){if(ks==XK_Escape)layout_cancel();A.need_draw=1;break;}
@@ -1019,6 +1037,21 @@ static void pump(int wait_ms)
             handle_event(&ev);
             if (g_quit)
                 return;
+        }
+        if(bluetooth_pending) {
+            int state=bluetooth_poll(&A.conn);
+            if(state) {
+                A.connected=state>0;A.dsp_valid=0;A.need_draw=1;
+                if(state>0)snprintf(A.console_notice,sizeof(A.console_notice),"Mango3.0 terhubung. Klik Baca DSP.");
+                else {
+                    unlock_device();
+                    const char *reason=A.conn.last_error==51?"perangkat tidak ditemukan / nama ganda / BlueZ tidak tersedia":
+                        A.conn.last_error==52?"sambungan GATT gagal":A.conn.last_error==53?"layanan AE01/AE02 tidak sesuai":
+                        A.conn.last_error==54?"notifikasi BLE gagal diaktifkan":A.conn.last_error==55?"BLE tersambung tetapi DSP tidak membalas query":
+                        "worker berhenti atau batas waktu koneksi habis";
+                    snprintf(A.console_notice,sizeof(A.console_notice),"Mango3.0: %s. Klik Connect untuk coba lagi.",reason);
+                }
+            }
         }
         if (A.dsp_reading) {
             read_dsp_batch();
@@ -1192,6 +1225,8 @@ int main(int argc, char **argv)
 
     layout_load();
     output_marks_load();
+    speaker_names_load();
+    protection_load();
     XMapWindow(A.dpy, A.win);
     XFlush(A.dpy);
     draw();
@@ -1223,7 +1258,7 @@ int main(int argc, char **argv)
             break;
     }
 done:
-    if (A.connected)
+    if (A.connected||bluetooth_pending)
         zp_close(&A.conn);
     if (A.font_small) XFreeFont(A.dpy, A.font_small);
     if (A.font_heading) XFreeFont(A.dpy, A.font_heading);

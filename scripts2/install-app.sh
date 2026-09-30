@@ -15,6 +15,7 @@ make -s all
 echo "==> installing to $BIN"
 mkdir -p "$HOME/.local/bin" "$APPDIR" "$ICONDIR" "$WEBROOT"
 install -m 0755 build/zp84gui "$BIN"
+install -m 0644 build/zp84-ble.py "$HOME/.local/bin/zp84-ble.py"
 install -m 0755 build/zp84web "$WEBBIN"
 install -m 0644 web/index.html web/style.css web/app.js "$WEBROOT/"
 

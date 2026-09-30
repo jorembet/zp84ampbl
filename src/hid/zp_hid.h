@@ -86,7 +86,7 @@ enum {
     ZP_ERR_CRC = 9
 };
 
-typedef struct {
+typedef struct zp_conn {
     int fd;
     int timeout_ms;
     uint8_t tag;
@@ -96,6 +96,8 @@ typedef struct {
     /* errno from the last failed open/read/write (0 if none/not applicable),
        so callers can print the real reason with strerror(). */
     int last_errno;
+    int (*custom_xfer)(struct zp_conn *,const uint8_t *,size_t,uint8_t,uint8_t *,uint8_t *,size_t,size_t *);
+    void (*custom_close)(struct zp_conn *);
 } zp_conn;
 
 int zp_find_hidraw(char *out, size_t out_len);

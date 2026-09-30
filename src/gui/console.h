@@ -125,17 +125,58 @@ static console_filter decode_filter(uint16_t code, int highpass)
     return f;
 }
 
-static double console_filter_db(console_filter filter, double cutoff, double freq, int hp)
+static zp_response_config console_response_config(int channel)
 {
-    if (!filter.known || !filter.slope || filter.family == 1 || cutoff <= 0 || cutoff >= 24000)
-        return 0;
-    double ratio = tan(3.141592653589793 * freq / 48000) / tan(3.141592653589793 * cutoff / 48000);
-    if (hp) ratio = 1/ratio;
-    double n = filter.slope/6.0;
-    if (filter.family == 2) return -20*log10(1+pow(ratio, n));
-    return -10*log10(1+pow(ratio, 2*n));
+    zp_response_config cfg={0};
+    int base=136*channel;
+    console_filter hp=decode_filter(A.dsp_values[base+138],1);
+    console_filter lp=decode_filter(A.dsp_values[base+142],0);
+    cfg.sample_rate=ZP_RESPONSE_FS;
+    cfg.hp=(zp_response_filter){hp.family,hp.slope,hp.known,dsp_frequency(A.dsp_values[base+139])};
+    cfg.lp=(zp_response_filter){lp.family,lp.slope,lp.known,dsp_frequency(A.dsp_values[base+143])};
+    /* Vendor BTService.s uses address - 1; EQ enable is vendor address 66+ch. */
+    cfg.eq_enabled=A.dsp_values[65+channel]!=0;
+    for(int band=0;band<31;band++) {
+        int id=base+147+4*band;
+        cfg.eq[band]=(zp_response_eq){A.dsp_values[id-1],1,dsp_frequency(A.dsp_values[id]),
+            ((double)A.dsp_values[id+1]-500)/10,A.dsp_values[id+2]*19.0/600};
+        /* Vendor MainActivity sets Q display scale=19/6. chart/c.java divides
+           displayed Q by that scale for PEQ alpha; shelves use displayed Q. */
+        if(cfg.eq[band].type==7)cfg.eq[band].q=A.dsp_values[id+2]/100.0;
+    }
+    return cfg;
 }
 
+static void console_response_log(void)
+{
+    if(!A.dsp_valid){snprintf(A.dsp_status,sizeof(A.dsp_status),"Baca DSP sebelum ekspor response.");return;}
+    char path[]="/tmp/zp84-response-XXXXXX";
+    int fd=mkstemp(path);
+    if(fd<0){snprintf(A.dsp_status,sizeof(A.dsp_status),"Gagal membuat log response: %s",strerror(errno));return;}
+    FILE *fp=fdopen(fd,"w");
+    if(!fp){close(fd);unlink(path);snprintf(A.dsp_status,sizeof(A.dsp_status),"Gagal membuka log response.");return;}
+    zp_response_config cfg=console_response_config(A.cur_ch);
+    fprintf(fp,"CH%d parameter model; Fs=%.0f; not measured hardware coefficients\n",A.cur_ch+1,cfg.sample_rate);
+    for(int mode=0;mode<ZP_RESPONSE_MODES;mode++) {
+        zp_cascade cascade;
+        fprintf(fp,"\nMODE %s\n",zp_response_mode_name(mode));
+        if(zp_response_build(&cfg,mode,&cascade,fp)!=ZP_RESPONSE_OK)continue;
+        fprintf(fp,"frequency_hz,response_db\n");
+        for(int i=0;i<ZP_RESPONSE_POINTS;i++) {
+            double f=zp_response_frequency(i,ZP_RESPONSE_POINTS,cfg.sample_rate);
+            fprintf(fp,"%.12g,%.12g\n",f,zp_cascade_response_db(&cascade,cfg.sample_rate,f));
+        }
+    }
+    int failed=ferror(fp);
+    if(fclose(fp)!=0)failed=1;
+    if(failed){unlink(path);snprintf(A.dsp_status,sizeof(A.dsp_status),"Gagal menulis log response.");}
+    else snprintf(A.dsp_status,sizeof(A.dsp_status),"Log response: %s",path);
+}
+
+static const unsigned long response_colors[8]={0xffb454,0xa997ff,0x9aa7bb,0xff879a,0x92c96a,0x7bbcff,0xde9fdb,0xe6df89};
+
+#include "protection.h"
+#include "speaker_names.h"
 #include "controls.h"
 #include "layout.h"
 #include "presets.h"
@@ -293,12 +334,12 @@ static void draw_mixer(void)
 {
     int top=mixer_top(),rows=mixer_rows(),height=132+65*rows;
     int source=A.dsp_values[1554],known=A.dsp_valid&&(source==1||source==2||source==3);
-    const unsigned long panel=0x424242,border=0x777777,ink=0xe7e7e7;
-    frect(88,top-4,1048,height+8,0x15191d);
+    const unsigned long panel=A.panel,border=0x46586b,ink=A.text;
+    frect(88,top-4,1048,height+8,0x101720);
     frect(92,top,1040,height,panel);fframe(92,top,1040,height,border);
-    frect(93,top+1,1038,26,0xe8e8e8);
-    ui_font(A.font_struct);dtext(101,top+19,0x555555,"Remix");
-    line(1105,top+7,1117,top+19,0x777777);line(1117,top+7,1105,top+19,0x777777);
+    frect(93,top+1,1038,26,0x293847);
+    ui_font(A.font_struct);dtext(101,top+19,ink,"Mixer");
+    line(1105,top+7,1117,top+19,A.dim);line(1117,top+7,1105,top+19,A.dim);
     if(!known) {
         dtext(120,top+65,ink,"Pilih AUX, Bluetooth atau High level setelah Baca DSP.");
     } else {
@@ -312,8 +353,9 @@ static void draw_mixer(void)
                 int x=mixer_cell_x(c),id=mixer_id(source,c,i);
                 unsigned value=A.dsp_values[id],gain=value/256;
                 if(fader_kind==5&&fader_index==id)gain=mixer_drag_gain();
+                frect(x,y,100,56,0x192633);
                 fframe(x,y,100,56,border);
-                unsigned long power=(value&1)?0x39a9ef:0x78828d;
+                unsigned long power=(value&1)?A.accent:0x657786;
                 XSetForeground(A.dpy,A.gc,power);
                 XSetLineAttributes(A.dpy,A.gc,(unsigned)(ui_px(2)>0?ui_px(2):1),LineSolid,CapRound,JoinRound);
                 XDrawArc(A.dpy,A.buf,A.gc,ui_px(x+16),ui_px(y+8),ui_px(12),ui_px(12),130*64,280*64);
@@ -321,8 +363,9 @@ static void draw_mixer(void)
                 XSetLineAttributes(A.dpy,A.gc,0,LineSolid,CapButt,JoinMiter);
                 char text[16];snprintf(text,sizeof(text),"%u",gain);
                 ui_font(A.font_small);ctext(x+50,y+17,43,ink,text);ui_font(A.font_struct);
-                line(x+10,y+39,x+90,y+39,0x888888);line(x+10,y+40,x+90,y+40,0x555555);
+                line(x+10,y+39,x+90,y+39,0x52687b);line(x+10,y+40,x+90,y+40,0x101720);
                 int thumb=x+10+(int)lround(80*zp_clampd(gain/100.0,0,1));
+                if(value&1)line(x+10,y+39,thumb,y+39,A.accent);
                 for(int k=-6;k<=6;k++) {
                     int shade=235-abs(k)*12;
                     frect(thumb+k,y+33,1,14,(unsigned long)shade*0x010101);
@@ -340,7 +383,7 @@ static void draw_mixer(void)
         snprintf(label,sizeof(label),"OutCh%d",c+1);ui_font(A.font_heading);ctext(x-50,bottom+38,100,ink,label);ui_font(A.font_struct);
     }
     ui_font(A.font_small);
-    ui_text_fit(108,top+height-12,1005,ink,A.console_notice[0]?A.console_notice:"Klik power: routing | Geser slider: gain | Klik angka: edit | Esc: batal / tutup");
+    ui_text_fit(108,top+height-12,1005,A.dim,A.console_notice[0]?A.console_notice:"Klik power: routing | Geser slider: gain | Klik angka: edit | Esc: batal / tutup");
     ui_font(A.font_struct);
 }
 static void mixer_click(int x,int y)
@@ -531,9 +574,52 @@ static void draw_password(void)
     ui_font(A.font_struct);
 }
 
+static void draw_protection(void)
+{
+    char text[200];int c=A.cur_ch;speaker_guard *g=&guards[c];
+    frect(265,190,710,430,A.panel);fframe(265,190,710,430,A.accent);
+    ui_font(A.font_heading);snprintf(text,sizeof(text),"Proteksi speaker - CH%d",c+1);dtext(285,225,A.text,text);
+    ui_font(A.font_struct);ui_box(920,200,36,26,"X",0);
+    for(int i=0;i<8;i++){snprintf(text,sizeof(text),"CH%d",i+1);ui_box(285+i*82,242,73,28,text,i==c);}
+    int compliant=!g->enabled||!A.dsp_valid||protection_channel_valid(c,A.dsp_values);
+    snprintf(text,sizeof(text),"Status: %s",protection_file_invalid?"FILE RUSAK - penulisan DSP diblokir":!compliant?"DSP DI LUAR BATAS - mute dan periksa":g->enabled?(A.dsp_valid?"BATAS AKTIF":"BATAS TERSIMPAN - Baca DSP"):"BELUM AKTIF");dtext(285,298,A.accent,text);
+    dtext(285,326,A.text,"Atur crossover dan level sesuai spesifikasi, lalu kunci batas saat ini.");
+    dtext(285,351,A.dim,"Tweeter: HPF wajib. Subwoofer ported: HPF/subsonic dan LPF wajib.");
+    dtext(285,376,A.dim,"Batas mencakup slope, cutoff, volume master/output dan gain tiap EQ.");
+    if(g->enabled) {
+        snprintf(text,sizeof(text),"%s | HPF >= %g Hz / %d dB/oct | LPF %s",g->role==1?"Tweeter":"Subwoofer",dsp_frequency(g->hp_freq),decode_filter(g->hp_type,1).slope,g->role==2?"dibatasi":"tidak dikunci");
+        dtext(285,405,A.text,text);
+        if(g->role==2){snprintf(text,sizeof(text),"LPF <= %g Hz / >= %d dB/oct",dsp_frequency(g->lp_freq),decode_filter(g->lp_type,0).slope);dtext(285,428,A.text,text);}
+    } else dtext(285,405,A.dim,"Tidak ada angka universal yang dijamin aman. Model speaker diperlukan.");
+    ui_box(285,443,660,29,protection_confirm?"[X] Saya sudah memeriksa batas terhadap spesifikasi speaker":"[ ] Saya sudah memeriksa batas terhadap spesifikasi speaker",protection_confirm);
+    if(!g->enabled){ui_box(285,488,205,32,"Kunci sebagai tweeter",0);ui_box(505,488,220,32,"Kunci sebagai subwoofer",0);}
+    else ui_box(285,488,300,32,"Lepas batas (perlu konfirmasi)",0);
+    ui_font(A.font_small);
+    dtext(285,548,A.dim,"Proteksi aplikasi, bukan limiter daya DSP. Tidak mendeteksi clipping / suhu / excursion.");
+    dtext(285,568,A.dim,"Setelan perangkat lain tetap dapat berubah. Periksa status setelah Baca DSP.");
+    ui_text_fit(285,595,660,A.text,A.console_notice);ui_font(A.font_struct);
+}
+static void protection_click(int x,int y)
+{
+    if(hit(920,200,36,26,x,y)){A.console_modal=0;return;}
+    for(int c=0;c<8;c++)if(hit(285+c*82,242,73,28,x,y)){A.cur_ch=c;protection_confirm=0;return;}
+    if(hit(285,443,660,29,x,y)){protection_confirm=!protection_confirm;return;}
+    if(!guards[A.cur_ch].enabled){
+        int role=hit(285,488,205,32,x,y)?1:hit(505,488,220,32,x,y)?2:0;
+        if(role&& !protection_file_invalid && protection_capture(A.cur_ch,role))snprintf(A.console_notice,sizeof(A.console_notice),"Batas CH%d tersimpan. Tidak ada parameter DSP diubah.",A.cur_ch+1);
+    } else if(hit(285,488,300,32,x,y)) {
+        if(!protection_confirm){protection_error(A.cur_ch,"centang konfirmasi untuk melepas batas.");return;}
+        speaker_guard old=guards[A.cur_ch];guards[A.cur_ch].enabled=0;
+        if(!protection_save()){guards[A.cur_ch]=old;protection_error(A.cur_ch,"gagal menyimpan; batas tetap aktif.");}
+        else snprintf(A.console_notice,sizeof(A.console_notice),"Batas CH%d dilepas.",A.cur_ch+1);
+        protection_confirm=0;
+    }
+}
+
 static void draw_console_modal(void)
 {
     if (!A.console_modal) return;
+    if(A.console_modal==12){draw_protection();return;}
     if(A.console_modal==4){draw_mixer();return;}
     if(A.console_modal==1){draw_memory();return;}
     if(A.console_modal==11){draw_password();return;}
@@ -551,7 +637,7 @@ static void draw_console_modal(void)
         fframe(343,338,400,21,A.accent);
         if(edit_selected)line(350,357,735,357,A.accent);
         dtext(343,385,A.dim,"Ketik nilai baru | Ctrl+A: pilih semua | Enter: terapkan");
-        ui_box(343,420,170,32,edit_kind==10?"Simpan preset":edit_kind==7?"Simpan skala":"Terapkan ke DSP",1);
+        ui_box(343,420,170,32,edit_kind==11?"Simpan nama":edit_kind==10?"Simpan preset":edit_kind==7?"Simpan skala":"Terapkan ke DSP",1);
         ui_box(533,420,100,32,"Batal",0);
     } else if (A.console_modal==8) {
         layout_init();
@@ -641,10 +727,12 @@ static void draw_console(void)
     ui_box(244,37,124,24,"Jarak / Delay",0);
     ui_box(377,37,103,24,"Input volume",0);
     ui_box(489,37,99,24,"Noise Gate",0);
+    ui_box(602,37,114,24,"Proteksi speaker",0);
+    ui_box(725,37,115,24,bluetooth_selected?"BLE Mango3.0":"Koneksi: USB",bluetooth_selected);
     ui_box(850,37,97,24,"Baca DSP",A.dsp_reading?1:0);
-    ui_box(954,37,108,24,A.connected?"Disconnect":"Connect",0);
+    ui_box(954,37,108,24,bluetooth_pending?"Batal koneksi":A.connected?"Disconnect":"Connect",0);
     frect(1116,39,110,22,A.connected?0x38b909:0x53564e);
-    ctext(1116,55,110,A.connected?0xffffff:0xc4c7be,A.connected?"connected":"disconnected");
+    ctext(1116,55,110,A.connected?0xffffff:0xc4c7be,bluetooth_pending?"connecting...":A.connected?"connected":"disconnected");
     frect(4,73,186,230,A.panel);
     static const char *families[]={"Butter-W","Bessel","Link_R"};
     for(int f=0;f<2;f++) {
@@ -679,28 +767,23 @@ static void draw_console(void)
         ctext(x-18,296,36,A.dim,b);
     }
     if(A.dsp_valid) {
-        for(int c=0;c<8;c++) {
-            if(c!=A.cur_ch && !(A.overlay_mask&(1u<<c)))continue;
-            zp_cascade eq;zp_cascade_init(&eq);
-            for(int band=0;band<31;band++) {
-                int id=136*c+147+4*band;
-                double freq=dsp_frequency(A.dsp_values[id]);
-                double gain=((double)A.dsp_values[id+1]-500)/10;
-                double q=A.dsp_values[id+2]*(19.0/6)/100;
-                if(freq>=10&&freq<=23000&&q>0&&gain>=-30&&gain<=30)
-                    zp_cascade_push(&eq,zp_biquad_peaking(48000,freq,q,gain));
-            }
-            console_filter hp=decode_filter(A.dsp_values[136*c+138],1),lp=decode_filter(A.dsp_values[136*c+142],0);
-            int previous=0, previous_visible=0;
-            for(int x=0;x<=gw;x++) {
-                double freq=20*pow(1000,(double)x/gw);
-                double db=zp_cascade_response_db(&eq,48000,freq);
-                db+=console_filter_db(hp,dsp_frequency(A.dsp_values[136*c+139]),freq,1);
-                db+=console_filter_db(lp,dsp_frequency(A.dsp_values[136*c+143]),freq,0);
-                int y=gy+(int)((20-zp_clampd(db,-20,20))*gh/40);
-                int visible = db>=-20 && db<=20;
-                if(x && (visible || previous_visible))line(gx+x-1,previous,gx+x,y,c==A.cur_ch?purple:0x9ba293);
-                previous=y; previous_visible=visible;
+        for(int pass=0;pass<9;pass++) {
+            int c=pass==8?A.cur_ch:pass;
+            if(pass<8&&(c==A.cur_ch||A.response_mode!=ZP_RESPONSE_FULL||!(A.overlay_mask&(1u<<c))))continue;
+            zp_response_config cfg=console_response_config(c);
+            zp_cascade cascade;
+            if(zp_response_build(&cfg,A.response_mode,&cascade,NULL)!=ZP_RESPONSE_OK)continue;
+            double prev_db=0; int prev_x=0;
+            for(int i=0;i<ZP_RESPONSE_POINTS;i++) {
+                double freq=zp_response_frequency(i,ZP_RESPONSE_POINTS,cfg.sample_rate);
+                double db=zp_cascade_response_db(&cascade,cfg.sample_rate,freq);
+                int x=gx+(int)lround(log(freq/20)/log(1000)*gw);
+                if(i&&isfinite(db)&&isfinite(prev_db)&&!(db>20&&prev_db>20)&&!(db< -20&&prev_db< -20)) {
+                    int y=gy+(int)lround((20-zp_clampd(db,-20,20))*gh/40);
+                    int py=gy+(int)lround((20-zp_clampd(prev_db,-20,20))*gh/40);
+                    line(prev_x,py,x,y,c==A.cur_ch?purple:response_colors[c]);
+                }
+                prev_db=db;prev_x=x;
             }
         }
         int id=base+147+4*A.console_band;
@@ -712,12 +795,16 @@ static void draw_console(void)
         }
     }
     ui_font(A.font_small);
-    ctext(gx,276,gw,A.dim,A.dsp_valid?"MODEL 48 kHz | status EQ bypass belum ditafsirkan | Bessel tidak dimodelkan":"Belum ada data USB - klik Baca DSP");
+    zp_response_config cfg=console_response_config(A.cur_ch);
+    zp_cascade check_response;
+    int response_status=zp_response_build(&cfg,A.response_mode,&check_response,NULL);
+    snprintf(b,sizeof(b),"CH%d %s | %s | F2 mode / F3 log | Model 48 kHz",A.cur_ch+1,zp_response_mode_name(A.response_mode),response_status==ZP_RESPONSE_OK?"": "filter tidak didukung / data invalid");
+    ctext(gx,276,gw,A.dim,A.dsp_valid?b:"Belum ada data USB - klik Baca DSP");
     ui_font(A.font_struct);
     for(int c=0;c<8;c++) {
         int y=82+c*27;
         frect(1180,y,44,20,A.panel);
-        unsigned long color=c==A.cur_ch?purple:A.overlay_mask&(1u<<c)?0xd2cf39:A.dim;
+        unsigned long color=c==A.cur_ch?purple:A.overlay_mask&(1u<<c)?response_colors[c]:A.dim;
         fframe(1180,y,44,20,color);snprintf(b,sizeof(b),"CH%d",c+1);ctext(1180,y+15,44,color,b);
     }
     frect(4,309,186,233,A.panel);console_car();
@@ -755,8 +842,8 @@ static void draw_console(void)
     for(int c=0;c<8;c++) {
         int x=196+c*114;
         frect(x,548,112,216,A.panel);
-        snprintf(b,sizeof(b),"CH%d",c+1);ui_box(x+9,559,94,26,b,c==A.cur_ch?1:0);
-        ui_font(A.font_small);ui_value(x+8,595,96,CH_ROLE[c]);ui_font(A.font_struct);
+        snprintf(b,sizeof(b),channel_linked(c)?"CH%d =":"CH%d",c+1);ui_box(x+9,559,94,26,b,c==A.cur_ch?1:0);
+        ui_font(A.font_small);ui_value(x+8,595,96,"");ui_text_fit(x+11,610,90,A.text,CH_ROLE[c]);ui_font(A.font_struct);
         double level=A.dsp_valid?dsp_channel_level(A.dsp_values[26+c]):0;
         level=fader_preview(2,c,level,634,79,60);
         ui_fader(x+32,634,79,level/60,A.dsp_valid);
@@ -774,8 +861,8 @@ static void draw_console(void)
         ui_font(A.font_small);dtext(x+7,750,A.dim,"Delay:");dtext(x+46,750,A.text,b);ui_font(A.font_struct);
     }
     frect(1114,548,120,216,A.panel);
-    const char *actions[]={"Edit EQ","Reset EQ","Restore EQ","Reset Output","Link pairs",output_locked?"Unlock output":"Lock output"};
-    for(int i=0;i<6;i++)ui_box(1123,559+i*32,102,23,actions[i],i==4?link_output:i==5?output_locked:0);
+    const char *actions[]={"Edit EQ","Reset EQ","Restore EQ","Reset Output",channel_linked(A.cur_ch)?"Unlink pairs":"Link pairs",output_locked?"Unlock output":"Lock output"};
+    for(int i=0;i<6;i++)ui_box(1123,559+i*32,102,23,actions[i],i==4?channel_linked(A.cur_ch):i==5?output_locked:0);
     ui_font(A.font_small);ctext(1114,759,120,A.dim,"Klik nilai untuk edit");
     frect(0,770,1240,30,0x152331);
     snprintf(b,sizeof(b),"CH%d  %s  |  %s",A.cur_ch+1,CH_ROLE[A.cur_ch],A.dsp_valid?A.dsp_time:"Belum ada snapshot");
@@ -787,6 +874,7 @@ static void draw_console(void)
 
 static void console_click(int x,int y)
 {
+    if(A.console_modal==12){protection_click(x,y);return;}
     if(A.console_modal==4){mixer_click(x,y);return;}
     if(A.console_modal==1){memory_click(x,y);return;}
     if(A.console_modal==11){password_click(x,y);return;}
@@ -823,6 +911,11 @@ static void console_click(int x,int y)
     else if(hit(244,37,124,24,x,y)){layout_init();A.console_modal=8;}
     else if(hit(377,37,103,24,x,y))A.console_modal=9;
     else if(hit(489,37,99,24,x,y))A.console_modal=10;
+    else if(hit(602,37,114,24,x,y)){protection_confirm=0;A.console_modal=12;}
+    else if(hit(725,37,115,24,x,y)) {
+        if(A.connected||bluetooth_pending)snprintf(A.console_notice,sizeof(A.console_notice),"Disconnect / batalkan dahulu sebelum mengganti USB / Bluetooth.");
+        else {bluetooth_selected=!bluetooth_selected;A.dsp_valid=0;snprintf(A.console_notice,sizeof(A.console_notice),"%s dipilih. Klik Connect (scan BLE sekitar 6 detik).",bluetooth_selected?"Bluetooth Mango3.0":"USB");}
+    }
     else if(hit(850,37,97,24,x,y))do_readids();
     else if(hit(954,37,108,24,x,y))do_connect();
     else if(hit(102,600,88,155,x,y)) {int unit=(y-600)/57;if(unit<3)A.delay_unit=unit;}

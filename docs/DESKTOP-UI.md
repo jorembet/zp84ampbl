@@ -49,8 +49,10 @@ Urutan keluarga Butter-W, Bessel, Link-Ril. Urutan rate 6,12,18,24,30,36,
 24 dB/oct, LPF 69 = OFF. Kode tidak dikenal ditampilkan `--`.
 
 Kurva adalah model matematis 48 kHz: peaking EQ, Butterworth, dan
-Linkwitz–Riley. Bessel tidak dimodelkan, dan flag bypass EQ belum ditafsirkan;
-catatan tersebut tampil pada grafik. Grafik bukan pengukuran respons audio.
+Linkwitz–Riley. Bypass EQ dibaca dari ID USB 65 + channel (indeks nol).
+Bessel dan orde LR nonstandar ditandai tidak didukung, tanpa kurva palsu.
+Grafik bukan pengukuran respons audio. F2 mengganti komponen respons; F3
+mengekspor koefisien dan 2048 sampel ke file sementara. Lihat [FREQUENCY-RESPONSE.md](FREQUENCY-RESPONSE.md).
 Model Linkwitz–Riley menunjukkan -6.0206 dB di titik potong. Status input,
 master volume dan mute dibaca dari register; link output adalah preferensi lokal.
 Nilai yang belum dipetakan ditampilkan `--` atau ikon `?` yang redup.
@@ -84,7 +86,8 @@ acknowledgement dan readback cocok; kegagalan membatalkan validitas snapshot.
 - Ikon speaker mengatur mute channel; ikon master mengatur mute semua output.
 - Edit EQ membuka gain band terpilih. Reset EQ meratakan gain; Restore EQ
   mengembalikan frequency, gain dan Q sebelum reset selama sesi koneksi ini.
-- Link pairs menghubungkan perubahan level pasangan CH1/2, 3/4, 5/6, 7/8.
+- Link pairs menyalin pengaturan channel terpilih ke pasangannya, kemudian
+  menyamakan edit volume, EQ, crossover, phase, mute, dan delay pada pasangan itu.
   Lock output mengunci perubahan level, phase, mute, dan delay dari panel ini.
 - Reset Output mengatur level channel terpilih ke 0, phase normal, delay 0.
 - Menu Info menggantikan tombol Encrypt yang belum didukung.
@@ -225,3 +228,32 @@ RCA, keduanya, atau tidak keduanya; CH5–CH8 hanya RCA. Penanda awal kosong.
 Ini catatan instalasi manual, **bukan pembacaan atau sakelar daya output DSP**.
 Mute channel tetap melalui tombol speaker. Penanda disimpan terpisah di
 `zp84-outputs.conf` pada folder kerja, sehingga tidak berubah saat Load preset.
+
+## Link pasangan stereo
+
+Pilih channel sumber, lalu klik **Link pairs**. CH1 menyalin ke CH2, CH2 ke
+CH1, dan seterusnya untuk pasangan 3/4, 5/6, 7/8. Link baru aktif setelah
+seluruh salinan terverifikasi. Hanya pasangan yang dipilih yang dihubungkan;
+beberapa pasangan dapat di-link secara terpisah. Header `CHn =` menandai
+channel terhubung; tombol menjadi **Unlink pairs** pada pasangan aktif.
+
+Perubahan dari sisi mana pun menyamakan level output, phase, mute, delay,
+HPF/LPF (frekuensi, tipe, slope), serta 31 band EQ (frekuensi, Q, gain).
+Reset/Restore EQ dan Reset Output juga berlaku ke pasangan. Unlink tidak
+mengembalikan nilai sebelumnya. Mixer tetap mempertahankan routing sumber
+L/R masing-masing, dan penanda AMP/RCA tetap merupakan catatan instalasi.
+
+Mengaktifkan Link membutuhkan snapshot USB lengkap dan output tidak terkunci.
+Kegagalan write dapat menghasilkan salinan parsial: link dilepas dan pengguna
+harus Baca DSP kembali. Link adalah keadaan sesi lokal; koneksi/pembacaan
+ulang serta penerapan preset yang mengubah nilai melepas link. Penerapan
+delay geometris meminta Unlink dahulu karena setiap speaker bisa memiliki
+jarak berbeda. Pengujian memakai mock USB, tanpa write pada amplifier fisik.
+
+## Nama speaker per channel
+
+Klik label speaker di bawah tombol CH (misalnya FL-Tweeter), ketik nama baru
+maksimal 24 karakter, lalu pilih **Simpan nama** atau Enter. Escape/Batal
+membatalkan. Nama dapat diubah tanpa koneksi USB dan disimpan di
+`$HOME/.zp84-speaker-names.conf`. Nama kosong ditolak. Label ini tidak
+mengubah jenis proteksi, crossover, routing, atau parameter DSP.

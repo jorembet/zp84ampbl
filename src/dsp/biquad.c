@@ -1,6 +1,7 @@
 #include "biquad.h"
 
 #include <math.h>
+#include <complex.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -27,8 +28,8 @@ static zp_biquad make(double b0, double b1, double b2, double a0, double a1,
                      double a2)
 {
     zp_biquad r;
-    if (a0 == 0.0)
-        a0 = 1.0;
+    if (!isfinite(a0) || a0 == 0.0)
+        return (zp_biquad){NAN,NAN,NAN,NAN,NAN};
     r.b0 = b0 / a0;
     r.b1 = b1 / a0;
     r.b2 = b2 / a0;
@@ -142,22 +143,46 @@ void zp_cascade_push(zp_cascade *c, zp_biquad s)
     c->stage[c->count++] = s;
 }
 
-void zp_cascade_push_linkwitz(zp_cascade *c, double fs, double f0,
-                              int order_is_octaves, int highpass)
+static int crossover_valid(const zp_cascade *c,double fs,double f0,int slope)
 {
-    const double lr_q = 0.5;
-    int sections = order_is_octaves / 12;
-    int i;
+    return c&&c->count>=0&&isfinite(fs)&&fs>0&&isfinite(f0)&&f0>0&&f0<fs/2
+        &&slope>=6&&slope<=48&&slope%6==0;
+}
 
-    if (sections < 1)
-        sections = 1;
-    if (sections > 12)
-        sections = 12;
-    for (i = 0; i < sections; i++) {
-        zp_biquad b = highpass ? zp_biquad_highpass(fs, f0, lr_q)
-                               : zp_biquad_lowpass(fs, f0, lr_q);
-        zp_cascade_push(c, b);
+static void push_butterworth_order(zp_cascade *c,double fs,double f0,int order,int hp)
+{
+    /* Real pole of an odd-order Butterworth, transformed with prewarped BLT. */
+    if(order%2) {
+        double k=tan(M_PI*f0/fs),norm=1+k;
+        zp_cascade_push(c,make(hp?1:k,hp?-1:k,0,norm,k-1,0));
     }
+    /* Conjugate Butterworth poles: distinct Q per SOS, low Q first. */
+    for(int k=order/2-1;k>=0;k--) {
+        double q=1/(2*sin(M_PI*(2*k+1)/(2*order)));
+        zp_cascade_push(c,hp?zp_biquad_highpass(fs,f0,q):zp_biquad_lowpass(fs,f0,q));
+    }
+}
+
+int zp_cascade_push_butterworth(zp_cascade *c,double fs,double f0,int slope,int hp)
+{
+    if(!crossover_valid(c,fs,f0,slope)||c->count+(slope/6+1)/2>ZP_MAX_STAGES)return -1;
+    push_butterworth_order(c,fs,f0,slope/6,hp);
+    return 0;
+}
+
+int zp_cascade_push_lr(zp_cascade *c,double fs,double f0,int slope,int hp)
+{
+    /* LR 2n = two identical Butterworth order-n filters; LR order 6 (36 dB/oct) uses BW3 twice.
+       Non-multiples of 12 dB/oct in the vendor menu have no standard LR model. */
+    if(!crossover_valid(c,fs,f0,slope)||slope%12||c->count+2*((slope/12+1)/2)>ZP_MAX_STAGES)return -1;
+    push_butterworth_order(c,fs,f0,slope/12,hp);
+    push_butterworth_order(c,fs,f0,slope/12,hp);
+    return 0;
+}
+
+void zp_cascade_push_linkwitz(zp_cascade *c,double fs,double f0,int slope,int hp)
+{
+    (void)zp_cascade_push_lr(c,fs,f0,slope,hp);
 }
 
 double zp_linkwitz_makeup_db(double fs, double hp_freq, int hp_order,
@@ -202,45 +227,57 @@ double zp_linkwitz_makeup_db(double fs, double hp_freq, int hp_order,
     return loss;
 }
 
-static double stage_response_db(const zp_biquad *b, double fs, double freq)
+static int response_frequency_valid(double fs,double freq)
 {
-    double w = 2.0 * M_PI * (freq / fs);
-    double c1 = cos(w), s1 = sin(w);
-    double c2 = cos(2 * w), s2 = sin(2 * w);
-    double nr, ni, dr, di;
-    double mag;
-
-    nr = b->b0 + b->b1 * c1 + b->b2 * c2;
-    ni = -(b->b1 * s1 + b->b2 * s2);
-    dr = 1.0 + b->a1 * c1 + b->a2 * c2;
-    di = -(b->a1 * s1 + b->a2 * s2);
-
-    if (dr == 0.0 && di == 0.0)
-        return 0.0;
-    mag = sqrt(nr * nr + ni * ni) / sqrt(dr * dr + di * di);
-    if (mag < 1e-12)
-        mag = 1e-12;
-    return 20.0 * log10(mag);
+    return isfinite(fs)&&fs>0&&isfinite(freq)&&freq>=0&&freq<=fs/2;
 }
 
-double zp_cascade_response_db(const zp_cascade *c, double fs, double freq)
+zp_complex_response zp_biquad_response(const zp_biquad *b,double fs,double freq)
 {
-    double total = c->gain_db;
-    int i;
-    for (i = 0; i < c->count; i++)
-        total += stage_response_db(&c->stage[i], fs, freq);
-    return total;
+    if(!b||!response_frequency_valid(fs,freq))return (zp_complex_response){NAN,NAN};
+    double omega=2*M_PI*freq/fs;
+    double complex z1=cexp(-I*omega),z2=z1*z1;
+    double complex numerator=b->b0+b->b1*z1+b->b2*z2;
+    double complex denominator=1+b->a1*z1+b->a2*z2;
+    if(cabs(denominator)==0)return (zp_complex_response){NAN,NAN};
+    double complex h=numerator/denominator;
+    return (zp_complex_response){creal(h),cimag(h)};
+}
+
+zp_complex_response zp_cascade_response(const zp_cascade *c,double fs,double freq)
+{
+    if(!c||!response_frequency_valid(fs,freq)||c->count<0||c->count>ZP_MAX_STAGES)
+        return (zp_complex_response){NAN,NAN};
+    double complex h=pow(10,c->gain_db/20.0);
+    for(int i=0;i<c->count;i++) {
+        zp_complex_response section=zp_biquad_response(&c->stage[i],fs,freq);
+        h*=section.re+I*section.im;
+    }
+    h*=cexp(-I*2*M_PI*freq*c->delay_ms/1000.0);
+    if(c->polarity)h=-h;
+    return (zp_complex_response){creal(h),cimag(h)};
+}
+
+double zp_cascade_response_db(const zp_cascade *c,double fs,double freq)
+{
+    zp_complex_response h=zp_cascade_response(c,fs,freq);
+    double magnitude=hypot(h.re,h.im);
+    if(!isfinite(magnitude))return NAN;
+    return 20*log10(fmax(magnitude,1e-12));
 }
 
 static double cascade_extreme(const zp_cascade *c, double fs, double f_lo,
                               double f_hi, double step, int want_max)
 {
-    double best = 0;
-    int n = (int)((f_hi - f_lo) / step) + 1;
+    if(!response_frequency_valid(fs,f_lo)||!isfinite(f_hi)||!isfinite(step)||step<=0||f_hi<f_lo)return NAN;
+    f_hi=fmin(f_hi,fs/2);
+    double best = want_max?-INFINITY:INFINITY;
+    int n = (int)ceil((f_hi - f_lo) / step);
     int i;
     for (i = 0; i <= n; i++) {
-        double f = f_lo + i * step;
+        double f = fmin(f_hi,f_lo + i * step);
         double v = zp_cascade_response_db(c, fs, f);
+        if(!isfinite(v))return NAN;
         if (want_max ? (v > best) : (v < best))
             best = v;
     }

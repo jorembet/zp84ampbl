@@ -37,9 +37,11 @@ static int control_ready(void)
 static int control_write(int id, uint16_t value)
 {
     if (!control_ready() || id < 0 || id >= ZP_PARAM_COUNT) return 0;
+    if(!protection_check(id,value))return 0;
     int err=zp_id_write(&A.conn,(uint16_t)id,value);
     if (err) {
-        A.dsp_valid=0;
+        A.dsp_valid=0;link_output=0;
+        memset(eq_undo_valid,0,sizeof(eq_undo_valid));
         snprintf(A.console_notice,sizeof(A.console_notice),"Gagal verifikasi ID %04X (%s). Baca DSP sebelum mencoba lagi.",id,zp_strerror(err));
         return 0;
     }
@@ -47,6 +49,54 @@ static int control_write(int id, uint16_t value)
     snprintf(A.console_notice,sizeof(A.console_notice),"ID %04X = %u: tersimpan dan terverifikasi melalui USB.",id,value);
     return 1;
 }
+/* Each bit links only one stereo pair: 1/2, 3/4, 5/6 or 7/8.
+   Copy only mapped channel processing, never reserved registers or input routing. */
+static int channel_linked(int ch){return (link_output&(1<<(ch/2)))!=0;}
+static int channel_setting_id(int ch,int index)
+{
+    if(index<93)return 147+136*ch+4*(index/3)+index%3;
+    static const int ids[]={138,139,142,143,73,26,2};
+    return ids[index-93]+(index<97?136*ch:ch);
+}
+static int control_set(int id,uint16_t value)
+{
+    int partner=-1;
+    for(int ch=0;ch<8&&partner<0;ch++)if(channel_linked(ch))
+        for(int i=0;i<100;i++)if(channel_setting_id(ch,i)==id){partner=channel_setting_id(ch^1,i);break;}
+    if(!protection_check(id,value)||(partner>=0&&!protection_check(partner,value)))return 0;
+    if(!control_write(id,value))return 0;
+    if(partner>=0&&!control_write(partner,value)) {
+        snprintf(A.console_notice,sizeof(A.console_notice),"Link gagal pada ID %04X; hasil parsial. Link dilepas, Baca DSP ulang.",partner);
+        return 0;
+    }
+    return 1;
+}
+static void control_link_toggle(void)
+{
+    int ch=A.cur_ch,other=ch^1,bit=1<<(ch/2);
+    if(link_output&bit) {
+        link_output&=~bit;
+        snprintf(A.console_notice,sizeof(A.console_notice),"Link CH%d/CH%d dilepas; pengaturan tetap.",(ch/2)*2+1,(ch/2)*2+2);
+        return;
+    }
+    if(output_locked){snprintf(A.console_notice,sizeof(A.console_notice),"Unlock output sebelum menyalin pengaturan pasangan.");return;}
+    if(!control_ready())return;
+    for(int i=0;i<100;i++)if(!protection_check(channel_setting_id(other,i),A.dsp_values[channel_setting_id(ch,i)]))return;
+    eq_undo_valid[ch]=eq_undo_valid[other]=0;
+    int done=0;
+    for(int i=0;i<100;i++) {
+        int from=channel_setting_id(ch,i),to=channel_setting_id(other,i);
+        if(A.dsp_values[from]==A.dsp_values[to])continue;
+        if(!control_write(to,A.dsp_values[from])) {
+            snprintf(A.console_notice,sizeof(A.console_notice),"Copy CH%d > CH%d gagal setelah %d write. Link OFF; Baca DSP ulang.",ch+1,other+1,done);
+            return;
+        }
+        done++;
+    }
+    link_output|=bit;
+    snprintf(A.console_notice,sizeof(A.console_notice),"Link ON: CH%d > CH%d. Volume, EQ, crossover, phase, mute dan delay sama.",ch+1,other+1);
+}
+
 static uint16_t level_raw(double level, int phase)
 {
     int n=(int)lround(level);
@@ -57,10 +107,10 @@ static void control_level(int ch, double level)
     if (!control_ready()) return;
     if (output_locked) {snprintf(A.console_notice,sizeof(A.console_notice),"Output terkunci. Klik Unlock output untuk mengedit.");return;}
     if(ch<0) {
+        for(int c=0;c<8;c++)if(!protection_check(12+c,level_raw(level,0)))return;
         for(int c=0;c<8;c++) if(!control_write(12+c,level_raw(level,0)))break;
     } else {
-        if(!control_write(26+ch,level_raw(level,A.dsp_values[26+ch]<5000)))return;
-        if(link_output) {int other=ch^1;control_write(26+other,level_raw(level,A.dsp_values[26+other]<5000));}
+        control_set(26+ch,level_raw(level,A.dsp_values[26+ch]<5000));
     }
 }
 /* kind: 0 integer, 1 Hz, 2 dB, 3 Q, 4 delay, 5 channel level, 6 mixer %,
@@ -76,6 +126,10 @@ static void control_edit(int id,int kind,const char *label,double value,double l
 }
 static void control_apply(void)
 {
+    if(edit_kind==11) {
+        if(speaker_name_save(edit_id,edit_text))A.console_modal=edit_return;
+        return;
+    }
     if(edit_kind==10) {
         if(preset_save_named(edit_id,edit_text))A.console_modal=1;
         return;
@@ -95,7 +149,7 @@ static void control_apply(void)
     if(edit_kind==8)raw=(uint16_t)(500+lround(v));
     if(edit_kind==9)raw=(uint16_t)noise_codes[(int)lround(v)];
     if(edit_kind==6)raw=(uint16_t)((int)lround(v)*256+(A.dsp_values[edit_id]&1));
-    if(control_write(edit_id,raw)) A.console_modal=edit_return;
+    if(control_set(edit_id,raw)) A.console_modal=edit_return;
 }
 static void control_key(XKeyEvent *event,KeySym ks)
 {
@@ -106,9 +160,9 @@ static void control_key(XKeyEvent *event,KeySym ks)
     if(ks==XK_BackSpace){if(edit_selected)edit_text[0]=0;else if(n)edit_text[n-1]=0;edit_selected=0;return;}
     if(ks==XK_Delete){edit_text[0]=0;return;}
     char chars[16];KeySym key;int count=XLookupString(event,chars,sizeof(chars),&key,NULL);
-    for(int i=0;i<count&&(edit_selected||n+1<sizeof(edit_text));i++)if((edit_kind==10&&chars[i]>=32&&chars[i]<=126)||(edit_kind!=10&&((chars[i]>='0'&&chars[i]<='9')||chars[i]=='.'||chars[i]==','||chars[i]=='-'))) {
+    for(int i=0;i<count&&(edit_selected||n+1<sizeof(edit_text));i++)if(((edit_kind==10||edit_kind==11)&&chars[i]>=32&&chars[i]<=126)||(edit_kind!=10&&edit_kind!=11&&((chars[i]>='0'&&chars[i]<='9')||chars[i]=='.'||chars[i]==','||chars[i]=='-'))) {
         if(edit_selected){n=0;edit_selected=0;}
-        edit_text[n++]=edit_kind!=10&&chars[i]==','?'.':chars[i];
+        edit_text[n++]=edit_kind!=10&&edit_kind!=11&&chars[i]==','?'.':chars[i];
     }
     edit_text[n]=0;
 }
@@ -116,10 +170,10 @@ static void control_release(int y)
 {
     int kind=fader_kind,index=fader_index;fader_kind=0;
     if(!kind||!control_ready())return;
-    if(kind==1)control_write(148+136*fader_channel+4*index,(uint16_t)lround(500+120*(1-2*zp_clampd((y-428)/69.0,0,1))));
+    if(kind==1)control_set(148+136*fader_channel+4*index,(uint16_t)lround(500+120*(1-2*zp_clampd((y-428)/69.0,0,1))));
     if(kind==2)control_level(index,60*(1-zp_clampd((y-634)/79.0,0,1)));
-    if(kind==5)control_write(index,(uint16_t)(256*mixer_drag_gain()+(A.dsp_values[index]&1)));
-    if(kind==4)control_write(index,(uint16_t)(500+lround(100*zp_clampd((fader_x-610)/230.0,0,1))));
+    if(kind==5)control_set(index,(uint16_t)(256*mixer_drag_gain()+(A.dsp_values[index]&1)));
+    if(kind==4)control_set(index,(uint16_t)(500+lround(100*zp_clampd((fader_x-610)/230.0,0,1))));
     if(kind==3)control_level(-1,60*(1-zp_clampd((y-628)/99.0,0,1)));
 }
 static void control_eq_reset(int restore)
@@ -130,12 +184,13 @@ static void control_eq_reset(int restore)
     if(!restore) {
         for(int b=0;b<31;b++)for(int r=0;r<3;r++)eq_undo[ch][3*b+r]=A.dsp_values[147+136*ch+4*b+r];
         eq_undo_valid[ch]=1;
+        if(channel_linked(ch)){memcpy(eq_undo[ch^1],eq_undo[ch],sizeof(eq_undo[ch]));eq_undo_valid[ch^1]=1;}
     }
     for(int b=0;b<31;b++) {
-        if(restore) {for(int r=0;r<3;r++)if(!control_write(147+136*ch+4*b+r,eq_undo[ch][3*b+r]))return;}
-        else if(!control_write(148+136*ch+4*b,500))return;
+        if(restore) {for(int r=0;r<3;r++)if(!control_set(147+136*ch+4*b+r,eq_undo[ch][3*b+r]))return;}
+        else if(!control_set(148+136*ch+4*b,500))return;
     }
-    if(restore)eq_undo_valid[ch]=0;
+    if(restore){eq_undo_valid[ch]=0;if(channel_linked(ch))eq_undo_valid[ch^1]=0;}
 }
 static int console_control_click(int x,int y)
 {
@@ -150,7 +205,7 @@ static int console_control_click(int x,int y)
             int family=v.family,rate=v.slope?v.slope/6-1:8;
             if(y<250)family=(family+1)%3;else rate=(rate+1)%9;
             static const int codes[]={40,8,14,20,46,52,58,26,64,42,10,16,22,48,54,60,28,66,44,12,18,24,50,56,62,30,68};
-            control_write(base+138+4*f,(uint16_t)(codes[family*9+rate]+f));
+            control_set(base+138+4*f,(uint16_t)(codes[family*9+rate]+f));
             return 1;
         }
     }
@@ -166,19 +221,25 @@ static int console_control_click(int x,int y)
     if(hit(35,625,42,110,x,y)){if(!output_locked&&control_ready()){fader_kind=3;fader_y=y;}return 1;}
     if(hit(37,739,34,20,x,y)) {
         if(!output_locked&&control_ready()){int mute=0;for(int c=0;c<8;c++)if(!A.dsp_values[2+c])mute=1;
-            for(int c=0;c<8;c++)if(!control_write(2+c,(uint16_t)mute))break;}
+            for(int c=0;c<8;c++)if(!control_set(2+c,(uint16_t)mute))break;}
         return 1;
     }
     for(int c=0;c<8;c++) {
         int xx=196+c*114;
+        if(hit(xx+8,595,96,21,x,y)) {
+            edit_id=c;edit_kind=11;edit_selected=1;edit_return=0;
+            snprintf(edit_label,sizeof(edit_label),"Nama speaker CH%d (maksimal 24 karakter)",c+1);
+            snprintf(edit_text,sizeof(edit_text),"%s",CH_ROLE[c]);
+            A.console_modal=6;return 1;
+        }
         if(hit(xx+47,625,61,32,x,y)){if(!output_locked)control_edit(c,5,"Output level",dsp_channel_level(A.dsp_values[26+c]),0,60);return 1;}
         if(hit(xx+17,623,31,103,x,y)){if(!output_locked&&control_ready()){fader_kind=2;fader_index=c;fader_y=y;}return 1;}
         if(hit(xx+62,675,38,19,x,y)) {
-            if(control_ready()&&!output_locked)control_write(26+c,(uint16_t)(A.dsp_values[26+c]<5000?A.dsp_values[26+c]+5000:A.dsp_values[26+c]-5000));
+            if(control_ready()&&!output_locked)control_set(26+c,(uint16_t)(A.dsp_values[26+c]<5000?A.dsp_values[26+c]+5000:A.dsp_values[26+c]-5000));
             return 1;
         }
         if(hit(xx+64,704,34,20,x,y)) {
-            if(control_ready()&&!output_locked)control_write(2+c,!A.dsp_values[2+c]);
+            if(control_ready()&&!output_locked)control_set(2+c,!A.dsp_values[2+c]);
             return 1;
         }
         if(hit(xx+7,734,100,27,x,y)) {
@@ -194,9 +255,9 @@ static int console_control_click(int x,int y)
         if(action==1)control_eq_reset(0);
         if(action==2)control_eq_reset(1);
         if(action==3&&!output_locked&&control_ready()) {
-            if(control_write(26+A.cur_ch,5000))control_write(73+A.cur_ch,0);
+            if(control_set(26+A.cur_ch,5000))control_set(73+A.cur_ch,0);
         }
-        if(action==4){link_output=!link_output;snprintf(A.console_notice,sizeof(A.console_notice),"Link level pasangan CH1/2, CH3/4, CH5/6, CH7/8: %s",link_output?"ON":"OFF");}
+        if(action==4)control_link_toggle();
         if(action==5)output_locked=!output_locked;
         return 1;
     }

@@ -1,0 +1,831 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -15,7 +15,10 @@
+ target_link_libraries(zp84web PRIVATE zphid m)
+ 
+ enable_testing()
+-add_executable(zpmath_test tests/zpmath_test.c src/dsp/biquad.c src/dsp/design.c)
++add_executable(zpresponse_test tests/zpresponse_test.c src/dsp/biquad.c src/dsp/response.c)
++target_link_libraries(zpresponse_test PRIVATE m)
++add_test(NAME zpresponse COMMAND zpresponse_test)
++add_executable(zpmath_test tests/zpmath_test.c src/dsp/biquad.c src/dsp/design.c src/dsp/response.c)
+ target_link_libraries(zpmath_test PRIVATE m)
+ add_test(NAME zpmath COMMAND zpmath_test)
+ 
+@@ -26,7 +29,7 @@
+ option(ZP84_GUI "Build the Xlib GUI" OFF)
+ if(ZP84_GUI)
+     find_package(X11 REQUIRED)
+-    add_executable(zpgui_data_test tests/zpgui_data_test.c src/dsp/biquad.c src/dsp/design.c)
++    add_executable(zpgui_data_test tests/zpgui_data_test.c src/dsp/biquad.c src/dsp/design.c src/dsp/response.c)
+     target_link_libraries(zpgui_data_test PRIVATE zphid ${X11_LIBRARIES} m)
+     target_include_directories(zpgui_data_test PRIVATE ${X11_INCLUDE_DIR})
+     add_test(NAME zpgui_data COMMAND zpgui_data_test)
+@@ -34,6 +37,7 @@
+         src/gui/zp84gui.c
+         src/dsp/biquad.c
+         src/dsp/design.c
++        src/dsp/response.c
+     )
+     target_link_libraries(zp84gui PRIVATE zphid ${X11_LIBRARIES} m)
+     target_include_directories(zp84gui PRIVATE ${X11_INCLUDE_DIR})
+--- a/Makefile
++++ b/Makefile
+@@ -6,8 +6,9 @@
+ X11_LIBS?= -lX11
+ 
+ HID_SRC := src/hid/zp_hid.c
+-DSP_SRC := src/dsp/biquad.c src/dsp/design.c
++DSP_SRC := src/dsp/biquad.c src/dsp/design.c src/dsp/response.c
+ GUI_SRC := src/gui/zp84gui.c
++DSP_HDR := src/dsp/biquad.h src/dsp/response.h src/dsp/design.h
+ GUI_HDR := src/gui/console.h src/gui/controls.h src/gui/car_asset.h src/gui/logo_asset.h src/gui/layout.h src/gui/presets.h src/gui/output_marks.h
+ 
+ all: tools $(BUILD)/zp84gui
+@@ -15,7 +16,7 @@
+ tools: $(BUILD)/zpsniff
+ 
+ $(BUILD)/zpsniff: tools/zpsniff.c $(HID_SRC) src/hid/zp_hid.h | $(BUILD)
+-	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDLIBS)
++	$(CC) $(CFLAGS) -Isrc -o $@ $(filter %.c,$^) $(LDLIBS)
+ 
+ WEB_SRC := src/web/zp84web.c
+ 
+@@ -26,22 +27,26 @@
+ 
+ gui: $(BUILD)/zp84gui
+ 
+-$(BUILD)/zp84gui: $(GUI_SRC) $(GUI_HDR) $(DSP_SRC) $(HID_SRC) src/dsp/design.h src/hid/zp_hid.h | $(BUILD)
++$(BUILD)/zp84gui: $(GUI_SRC) $(GUI_HDR) $(DSP_HDR) $(DSP_SRC) $(HID_SRC) src/dsp/design.h src/hid/zp_hid.h | $(BUILD)
+ 	$(CC) $(CFLAGS) -Isrc -o $@ $(filter %.c,$^) $(X11_LIBS) $(LDLIBS)
+ 
+-$(BUILD)/zpmath_test: tests/zpmath_test.c $(DSP_SRC) | $(BUILD)
+-	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDLIBS) $(LDLIBS)
++$(BUILD)/zpmath_test: tests/zpmath_test.c $(DSP_SRC) $(DSP_HDR) | $(BUILD)
++	$(CC) $(CFLAGS) -Isrc -o $@ $(filter %.c,$^) $(LDLIBS) $(LDLIBS)
+ 
+ $(BUILD):
+ 	mkdir -p $(BUILD)
+ 
+ $(BUILD)/zpframe_test: tests/zpframe_test.c $(HID_SRC) | $(BUILD)
+-	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDLIBS)
++	$(CC) $(CFLAGS) -Isrc -o $@ $(filter %.c,$^) $(LDLIBS)
+ 
+-$(BUILD)/zpgui_data_test: tests/zpgui_data_test.c $(GUI_SRC) $(GUI_HDR) $(DSP_SRC) $(HID_SRC) | $(BUILD)
++$(BUILD)/zpgui_data_test: tests/zpgui_data_test.c $(GUI_SRC) $(GUI_HDR) $(DSP_HDR) $(DSP_SRC) $(HID_SRC) | $(BUILD)
+ 	$(CC) $(CFLAGS) -Isrc -o $@ tests/zpgui_data_test.c $(DSP_SRC) $(HID_SRC) $(X11_LIBS) $(LDLIBS)
+ 
+-test: $(BUILD)/zpmath_test $(BUILD)/zpframe_test $(BUILD)/zpgui_data_test
++$(BUILD)/zpresponse_test: tests/zpresponse_test.c $(DSP_SRC) $(DSP_HDR) | $(BUILD)
++	$(CC) $(CFLAGS) -Isrc -o $@ $(filter %.c,$^) $(LDLIBS)
++
++test: $(BUILD)/zpresponse_test $(BUILD)/zpmath_test $(BUILD)/zpframe_test $(BUILD)/zpgui_data_test
++	@$(BUILD)/zpresponse_test
+ 	@$(BUILD)/zpgui_data_test
+ 	@$(BUILD)/zpframe_test
+ 	@echo
+--- a/docs/CONSOLE-MAPPING.md
++++ b/docs/CONSOLE-MAPPING.md
+@@ -41,8 +41,9 @@
+ 
+ ## Batas
+ 
+-Bypass EQ belum dipetakan. Jangan
+-mengisi nilai tersebut dari screenshot lama. Kurva menampilkan model EQ dan
++EQ enable menggunakan USB ID 65 + channel (indeks nol): 0 bypass, nonzero aktif.
++Jenis EQ pada ID 146 + 136*channel + 4*band: 5 high shelf, 6 low shelf, 7 peaking.
++Mapping berdasarkan APK f/a.java, BTService.s, d/c.java dan chart/c.java. Kurva menampilkan model EQ dan
+ crossover Butterworth/Linkwitz–Riley 48 kHz, bukan pengukuran audio.
+ Bessel tidak dimodelkan. Kode filter dan OFF telah diterjemahkan berdasarkan
+ resource APK; lihat [DESKTOP-UI.md](DESKTOP-UI.md).
+--- a/docs/DESKTOP-UI.md
++++ b/docs/DESKTOP-UI.md
+@@ -49,8 +49,10 @@
+ 24 dB/oct, LPF 69 = OFF. Kode tidak dikenal ditampilkan `--`.
+ 
+ Kurva adalah model matematis 48 kHz: peaking EQ, Butterworth, dan
+-Linkwitz–Riley. Bessel tidak dimodelkan, dan flag bypass EQ belum ditafsirkan;
+-catatan tersebut tampil pada grafik. Grafik bukan pengukuran respons audio.
++Linkwitz–Riley. Bypass EQ dibaca dari ID USB 65 + channel (indeks nol).
++Bessel dan orde LR nonstandar ditandai tidak didukung, tanpa kurva palsu.
++Grafik bukan pengukuran respons audio. F2 mengganti komponen respons; F3
++mengekspor koefisien dan 2048 sampel ke file sementara. Lihat [FREQUENCY-RESPONSE.md](FREQUENCY-RESPONSE.md).
+ Model Linkwitz–Riley menunjukkan -6.0206 dB di titik potong. Status input,
+ master volume dan mute dibaca dari register; link output adalah preferensi lokal.
+ Nilai yang belum dipetakan ditampilkan `--` atau ikon `?` yang redup.
+--- /dev/null
++++ b/docs/FREQUENCY-RESPONSE.md
+@@ -0,0 +1,81 @@
++# Perbaikan frequency response ZP 8.4 AMP
++
++## Koreksi lanjutan: skala Q PEQ (30 September 2026)
++
++Kesimpulan awal bahwa puncak sempit sudah benar belum lengkap. Penelusuran
++`MainActivity.java:1731` menemukan faktor Q tampilan **19/6**. Pada
++`chart/c.java:836`, alpha PEQ memakai `sin(omega)/(2*Q_display/(19/6))`.
++`d/a.java` mengubah raw menjadi Q tampilan sebelum meneruskannya ke chart.
++Adapter kita sebelumnya mengirim Q tampilan langsung ke RBJ sehingga filter
++sekitar 3,1667 kali terlalu sempit. Sekarang PEQ memakai Q efektif `raw/100`
++(contoh raw239 → Q2,39), sementara angka tampilan tetap sekitar7,57.
++Shelf mempertahankan konvensi sebelumnya karena cabang vendor tidak memakai
++pembagi ini. Tidak ada penulisan parameter hardware dalam koreksi ini.
++
++Pengujian regresi membandingkan respons di luar center frequency terhadap
++persamaan vendor secara independen; tes tepat di center saja tidak mendeteksi
++kesalahan bandwidth. CTest 4/4 dan Make lulus; screenshot fixture diperbarui.
++Grafik tetap satu respons gabungan. Log section PEQ menyatakan Q efektif.
++
++## Temuan dan akar masalah
++
++1. `src/dsp/biquad.c`: builder Linkwitz–Riley lama mengulang biquad Q=0,5 untuk setiap 12 dB/oct. Ini hanya menghasilkan LR12 yang benar; LR24 menjadi −12,04 dB dan LR48 menjadi −24,08 dB pada cutoff. LR harus berupa dua Butterworth identik berorde setengah orde total, dengan Q masing-masing pole yang benar. LR36 kini terdiri dari dua Butterworth orde 3, masing-masing satu section orde pertama dan satu biquad Q=1.
++2. `src/gui/console.h`: grafik memakai mesin berbeda dari builder DSP, yaitu rumus magnitude crossover dan cascade PEQ. Rumus magnitude Butterworth/LR sebelumnya sendiri tidak menyebabkan ripple. Namun bypass EQ tidak diterapkan, semua tipe EQ dianggap peaking, dan filter yang tidak didukung ditampilkan sebagai respons datar. Grafik sekarang menggunakan satu cascade koefisien untuk semua komponennya.
++3. Screenshot menampilkan sejumlah channel overlay dengan warna abu-abu yang sama. Kurva abu-abu dengan puncak frekuensi tinggi tidak dapat dianggap sebagai LPF channel CH3 yang terpilih. Overlay sekarang berwarna sesuai tombol channel, digambar sebelum channel terpilih. Mode debug mengisolasi channel terpilih.
++4. `tests/zpmath_test.c` mengabadikan hasil LR yang salah dalam expected values. Ekspektasi diperbaiki dan pengujian independen ditambahkan di `tests/zpresponse_test.c`.
++
++Tidak ditemukan kesalahan derajat/radian, tanda denominator, normalisasi a0 pada koefisien valid, atau spline pada renderer lama. Penjumlahan dB antarfilter sebelumnya juga secara matematis setara dengan perkalian magnitude; bukan penjumlahan magnitude linear. Karena itu, bukan semua poin dugaan merupakan bug.
++
++## Implementasi
++
++- `biquad.c/.h`: H(z) kompleks dengan z1=exp(−jω), z2=z1²; denominator 1+a1*z1+a2*z2. a0 dinormalisasi saat pembuatan koefisien. Respons cascade mengalikan H setiap section, kemudian mengambil 20*log10(max(abs(H),1e−12)). Parameter/frekuensi invalid menghasilkan NaN, bukan kurva datar.
++- Butterworth: orde 1–8, slope 6–48 dB/oct; Q conjugate pole berbeda untuk masing-masing section, plus section orde pertama untuk orde ganjil.
++- Linkwitz–Riley: slope 12/24/36/48 dB/oct; dua Butterworth identik. Cutoff semua orde sekitar −6,0206 dB.
++- `response.c/.h`: model channel HPF × EQ1…EQ31 × LPF, bypass, mode terpisah, pencatatan koefisien. EQ aktif dengan gain 0 tetap dibuat dan dihitung. Filter yang bypass dilewati.
++- Fs desktop 48.000 Hz, Nyquist 24.000 Hz. Grafik memakai 2048 titik logaritmik 20–20.000 Hz; garis lurus antarsampel, tanpa spline atau smoothing. Evaluasi di atas Nyquist ditolak.
++- `console.h`: adapter dari snapshot yang sudah dibaca, rendering dan log. `zp84gui.c`: tombol keyboard mode/log. Tidak ada perubahan struktur utama UI.
++- Bessel, tipe EQ tidak dikenal, dan slope LR nonstandar 6/18/30/42 dB/oct tidak ditebak. Mode terkait menampilkan status tidak didukung dan tidak menggambar cascade parsial.
++
++## Kompatibilitas data
++
++Sumber mapping lokal: `work/apk_src/sources/com/tigerapp/jheqchart_application/`.
++
++- `f/a.java`: alamat EQ enable 66+channel, type 147+136*channel+4*band (indeks nol).
++- `service/BTService.java`, metode `s`: alamat vendor dikurangi satu untuk indeks parameter USB.
++- `d/c.java` / `d/i.java`: EQ enable 0 menunjukkan bypass; nonzero aktif.
++- `chart/c.java`: type 5 high shelf, 6 low shelf; type 7 peaking juga digunakan oleh reset di `d/c.java`. Q shelf dibatasi maksimum 2 sesuai model vendor.
++- Adapter menggunakan USB ID 65+channel untuk enable dan 146+136*channel+4*band untuk type. Decode frequency, gain `(raw−500)/10`, Q tampilan `raw*19/600` tetap dipertahankan; Q efektif PEQ untuk respons adalah `raw/100`.
++
++Ini adalah **model dari parameter**, bukan pembacaan koefisien hardware atau hasil pengukuran audio. Jalur USB menyediakan nilai parameter uint16; tidak ada koefisien fixed-point hardware yang dikonversi menjadi floating point oleh grafik. Format fixed-point, protokol, packet, memory/preset dan parameter snapshot tidak diubah. Bypass per-band hardware tidak diasumsikan tanpa mapping; model mendukung bypass eksplisit, adapter menerapkan flag global yang telah ditelusuri.
++
++## Menggunakan debug
++
++Di tampilan DSP, tanpa dialog terbuka:
++
++- **F2** berputar antara HPF+EQ+LPF, HPF only, LPF only, EQ only, HPF+LPF.
++- Mode terpisah hanya menggambar channel terpilih. Mode penuh mempertahankan pilihan overlay.
++- **F3** menulis `/tmp/zp84-response-XXXXXX`; lokasi muncul di status bawah. File berisi kelima mode, type/frequency/gain/Q/slope per section, b0/b1/b2/a0=1/a1/a2, dan 2048 pasangan frequency/response dB per mode.
++- Q=0 pada log section orde pertama berarti Q tidak berlaku, bukan Q biquad yang invalid.
++
++## Verifikasi
++
++Dilakukan tanpa koneksi atau penulisan ke DSP:
++
++- `make test gui`: lulus; 50 pemeriksaan matematika lama yang diperbarui, tes protokol, GUI data, serta suite respons baru.
++- CMake dengan `-DZP84_GUI=ON`: compile berhasil; CTest **4/4 lulus**.
++- AddressSanitizer/UndefinedBehaviorSanitizer suite respons: lulus dengan leak detection dimatikan karena LeakSanitizer tidak bekerja di lingkungan ptrace ini.
++- Suite baru: 2048 sampel, monotonic HPF/LPF, cascade penuh sama dengan jumlah dB komponen, cutoff BW/LR, semua orde BW/LR terhadap rumus BLT independen, PEQ dengan DFT impulse sebagai pembanding kompleks, EQ gain nol, bypass, unknown filter, Nyquist, dan peak EQ asli pada 20 Hz/20 kHz tetap dipertahankan.
++- Adapter snapshot: CH3, HPF BW24, LPF LR36, Q239 → 7,5683, 31 EQ, dan flag bypass.
++- Xvfb render memakai fixture terpisah dari binary produksi: **56.645 painted samples**, hasil diperiksa secara visual. Tidak menggunakan `--read-dsp`.
++
++Fixture sesuai permintaan: HPF100 BW24, LPF6000 LR36; EQ100/125/160/200 Hz +1,9/+3,3/+3/+1,9 dB, Q tampilan7,57 (Q efektif≈2,3905). LPF pada cutoff tepat −6,0206 dB; setelah cutoff respons penuh terus turun. Pada sekitar10 kHz respons penuh sekitar−32 dB, dan pada20.000 Hz sekitar−114,57 dB. Lengkungan lebih lebar sekitar100–200 Hz berasal dari EQ yang diaktifkan setelah koreksi skala Q. Batas plot tetap ±20 dB, sehingga bagian di bawah−20 dB tidak terlihat.
++
++Artefak:
++
++- `build/frequency-response.csv`: 2048 titik untuk lima mode (dibuat ulang dengan `build/zpresponse_test build/frequency-response.csv`).
++- `build/frequency-response-preview.png`: screenshot fixture, bukan pembacaan perangkat.
++- `artifacts/frequency-response.patch`: patch lengkap terhadap keadaan workspace sebelum perbaikan respons ini; tidak mencakup perubahan UI/memory/link-pairs terdahulu.
++
++## Referensi matematis
++
++[W3C Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/) mendokumentasikan koefisien RBJ, normalisasi dan konvensi transfer function. [Linkwitz Lab — Filters](https://www.linkwitzlab.com/filters.htm) mendokumentasikan crossover Linkwitz–Riley. Implementasi hardware persis tetap memerlukan koefisien vendor atau pengukuran, sehingga laporan ini tidak menyatakan verifikasi akustik perangkat.
+--- a/src/dsp/biquad.c
++++ b/src/dsp/biquad.c
+@@ -1,6 +1,7 @@
+ #include "biquad.h"
+ 
+ #include <math.h>
++#include <complex.h>
+ 
+ #ifndef M_PI
+ #define M_PI 3.14159265358979323846
+@@ -27,8 +28,8 @@
+                      double a2)
+ {
+     zp_biquad r;
+-    if (a0 == 0.0)
+-        a0 = 1.0;
++    if (!isfinite(a0) || a0 == 0.0)
++        return (zp_biquad){NAN,NAN,NAN,NAN,NAN};
+     r.b0 = b0 / a0;
+     r.b1 = b1 / a0;
+     r.b2 = b2 / a0;
+@@ -142,22 +143,46 @@
+     c->stage[c->count++] = s;
+ }
+ 
+-void zp_cascade_push_linkwitz(zp_cascade *c, double fs, double f0,
+-                              int order_is_octaves, int highpass)
+-{
+-    const double lr_q = 0.5;
+-    int sections = order_is_octaves / 12;
+-    int i;
+-
+-    if (sections < 1)
+-        sections = 1;
+-    if (sections > 12)
+-        sections = 12;
+-    for (i = 0; i < sections; i++) {
+-        zp_biquad b = highpass ? zp_biquad_highpass(fs, f0, lr_q)
+-                               : zp_biquad_lowpass(fs, f0, lr_q);
+-        zp_cascade_push(c, b);
+-    }
++static int crossover_valid(const zp_cascade *c,double fs,double f0,int slope)
++{
++    return c&&c->count>=0&&isfinite(fs)&&fs>0&&isfinite(f0)&&f0>0&&f0<fs/2
++        &&slope>=6&&slope<=48&&slope%6==0;
++}
++
++static void push_butterworth_order(zp_cascade *c,double fs,double f0,int order,int hp)
++{
++    /* Real pole of an odd-order Butterworth, transformed with prewarped BLT. */
++    if(order%2) {
++        double k=tan(M_PI*f0/fs),norm=1+k;
++        zp_cascade_push(c,make(hp?1:k,hp?-1:k,0,norm,k-1,0));
++    }
++    /* Conjugate Butterworth poles: distinct Q per SOS, low Q first. */
++    for(int k=order/2-1;k>=0;k--) {
++        double q=1/(2*sin(M_PI*(2*k+1)/(2*order)));
++        zp_cascade_push(c,hp?zp_biquad_highpass(fs,f0,q):zp_biquad_lowpass(fs,f0,q));
++    }
++}
++
++int zp_cascade_push_butterworth(zp_cascade *c,double fs,double f0,int slope,int hp)
++{
++    if(!crossover_valid(c,fs,f0,slope)||c->count+(slope/6+1)/2>ZP_MAX_STAGES)return -1;
++    push_butterworth_order(c,fs,f0,slope/6,hp);
++    return 0;
++}
++
++int zp_cascade_push_lr(zp_cascade *c,double fs,double f0,int slope,int hp)
++{
++    /* LR 2n = two identical Butterworth order-n filters; LR order 6 (36 dB/oct) uses BW3 twice.
++       Non-multiples of 12 dB/oct in the vendor menu have no standard LR model. */
++    if(!crossover_valid(c,fs,f0,slope)||slope%12||c->count+2*((slope/12+1)/2)>ZP_MAX_STAGES)return -1;
++    push_butterworth_order(c,fs,f0,slope/12,hp);
++    push_butterworth_order(c,fs,f0,slope/12,hp);
++    return 0;
++}
++
++void zp_cascade_push_linkwitz(zp_cascade *c,double fs,double f0,int slope,int hp)
++{
++    (void)zp_cascade_push_lr(c,fs,f0,slope,hp);
+ }
+ 
+ double zp_linkwitz_makeup_db(double fs, double hp_freq, int hp_order,
+@@ -202,45 +227,57 @@
+     return loss;
+ }
+ 
+-static double stage_response_db(const zp_biquad *b, double fs, double freq)
+-{
+-    double w = 2.0 * M_PI * (freq / fs);
+-    double c1 = cos(w), s1 = sin(w);
+-    double c2 = cos(2 * w), s2 = sin(2 * w);
+-    double nr, ni, dr, di;
+-    double mag;
+-
+-    nr = b->b0 + b->b1 * c1 + b->b2 * c2;
+-    ni = -(b->b1 * s1 + b->b2 * s2);
+-    dr = 1.0 + b->a1 * c1 + b->a2 * c2;
+-    di = -(b->a1 * s1 + b->a2 * s2);
+-
+-    if (dr == 0.0 && di == 0.0)
+-        return 0.0;
+-    mag = sqrt(nr * nr + ni * ni) / sqrt(dr * dr + di * di);
+-    if (mag < 1e-12)
+-        mag = 1e-12;
+-    return 20.0 * log10(mag);
+-}
+-
+-double zp_cascade_response_db(const zp_cascade *c, double fs, double freq)
+-{
+-    double total = c->gain_db;
+-    int i;
+-    for (i = 0; i < c->count; i++)
+-        total += stage_response_db(&c->stage[i], fs, freq);
+-    return total;
++static int response_frequency_valid(double fs,double freq)
++{
++    return isfinite(fs)&&fs>0&&isfinite(freq)&&freq>=0&&freq<=fs/2;
++}
++
++zp_complex_response zp_biquad_response(const zp_biquad *b,double fs,double freq)
++{
++    if(!b||!response_frequency_valid(fs,freq))return (zp_complex_response){NAN,NAN};
++    double omega=2*M_PI*freq/fs;
++    double complex z1=cexp(-I*omega),z2=z1*z1;
++    double complex numerator=b->b0+b->b1*z1+b->b2*z2;
++    double complex denominator=1+b->a1*z1+b->a2*z2;
++    if(cabs(denominator)==0)return (zp_complex_response){NAN,NAN};
++    double complex h=numerator/denominator;
++    return (zp_complex_response){creal(h),cimag(h)};
++}
++
++zp_complex_response zp_cascade_response(const zp_cascade *c,double fs,double freq)
++{
++    if(!c||!response_frequency_valid(fs,freq)||c->count<0||c->count>ZP_MAX_STAGES)
++        return (zp_complex_response){NAN,NAN};
++    double complex h=pow(10,c->gain_db/20.0);
++    for(int i=0;i<c->count;i++) {
++        zp_complex_response section=zp_biquad_response(&c->stage[i],fs,freq);
++        h*=section.re+I*section.im;
++    }
++    h*=cexp(-I*2*M_PI*freq*c->delay_ms/1000.0);
++    if(c->polarity)h=-h;
++    return (zp_complex_response){creal(h),cimag(h)};
++}
++
++double zp_cascade_response_db(const zp_cascade *c,double fs,double freq)
++{
++    zp_complex_response h=zp_cascade_response(c,fs,freq);
++    double magnitude=hypot(h.re,h.im);
++    if(!isfinite(magnitude))return NAN;
++    return 20*log10(fmax(magnitude,1e-12));
+ }
+ 
+ static double cascade_extreme(const zp_cascade *c, double fs, double f_lo,
+                               double f_hi, double step, int want_max)
+ {
+-    double best = 0;
+-    int n = (int)((f_hi - f_lo) / step) + 1;
++    if(!response_frequency_valid(fs,f_lo)||!isfinite(f_hi)||!isfinite(step)||step<=0||f_hi<f_lo)return NAN;
++    f_hi=fmin(f_hi,fs/2);
++    double best = want_max?-INFINITY:INFINITY;
++    int n = (int)ceil((f_hi - f_lo) / step);
+     int i;
+     for (i = 0; i <= n; i++) {
+-        double f = f_lo + i * step;
++        double f = fmin(f_hi,f_lo + i * step);
+         double v = zp_cascade_response_db(c, fs, f);
++        if(!isfinite(v))return NAN;
+         if (want_max ? (v > best) : (v < best))
+             best = v;
+     }
+--- a/src/dsp/biquad.h
++++ b/src/dsp/biquad.h
+@@ -10,6 +10,7 @@
+ 
+ #define ZP_MAX_STAGES 64
+ 
++/* Normalized denominator: 1 + a1*z^-1 + a2*z^-2 (a0 = 1). */
+ typedef struct {
+     double b0, b1, b2;
+     double a1, a2;
+@@ -37,8 +38,16 @@
+ 
+ void zp_cascade_init(zp_cascade *c);
+ void zp_cascade_push(zp_cascade *c, zp_biquad s);
++typedef struct { double re, im; } zp_complex_response;
++zp_complex_response zp_biquad_response(const zp_biquad *b, double fs, double freq);
++zp_complex_response zp_cascade_response(const zp_cascade *c, double fs, double freq);
++/* Return -1 for invalid/unsupported input; do not append a partial crossover. */
++int zp_cascade_push_butterworth(zp_cascade *c, double fs, double f0,
++                                int slope_db_oct, int highpass);
++int zp_cascade_push_lr(zp_cascade *c, double fs, double f0,
++                       int slope_db_oct, int highpass);
+ void zp_cascade_push_linkwitz(zp_cascade *c, double fs, double f0,
+-                              int order_is_octaves, int highpass);
++                              int slope_db_oct, int highpass);
+ double zp_linkwitz_makeup_db(double fs, double hp_freq, int hp_order,
+                              double lp_freq, int lp_order, int has_hp,
+                              int has_lp);
+--- /dev/null
++++ b/src/dsp/response.c
+@@ -0,0 +1,80 @@
++#include "response.h"
++#include <math.h>
++
++const char *zp_response_mode_name(int mode)
++{
++    static const char *names[]={"HPF + EQ + LPF","HPF only","LPF only","EQ only","HPF + LPF"};
++    return mode>=0&&mode<ZP_RESPONSE_MODES?names[mode]:"Invalid mode";
++}
++static void log_section(FILE *f,const char *type,double freq,double gain,double q,int slope,int index,const zp_biquad *b)
++{
++    if(!f)return;
++    fprintf(f,"%s section=%d frequency=%.17g gain=%.17g Q=%.17g slope=%d\n"
++              "  normalized b0=%.17g b1=%.17g b2=%.17g a0=1 a1=%.17g a2=%.17g\n",
++              type,index,freq,gain,q,slope,b->b0,b->b1,b->b2,b->a1,b->a2);
++}
++static int crossover(const zp_response_filter *filter,double fs,int hp,zp_cascade *out,FILE *log)
++{
++    if(!filter->known)return ZP_RESPONSE_UNSUPPORTED;
++    if(!filter->slope){if(log)fprintf(log,"%s BYPASS (OFF)\n",hp?"HPF":"LPF");return ZP_RESPONSE_OK;}
++    if(filter->family!=0&&filter->family!=2)return ZP_RESPONSE_UNSUPPORTED;
++    if(filter->family==2&&filter->slope%12)return ZP_RESPONSE_UNSUPPORTED;
++    int start=out->count;
++    int result=filter->family==0?zp_cascade_push_butterworth(out,fs,filter->frequency,filter->slope,hp)
++                              :zp_cascade_push_lr(out,fs,filter->frequency,filter->slope,hp);
++    if(result)return ZP_RESPONSE_INVALID;
++    /* Log the prototype Q for every generated SOS/first-order section. */
++    int order=filter->slope/(filter->family==2?12:6),index=start;
++    for(int repeat=0;repeat<(filter->family==2?2:1);repeat++) {
++        char type[40];snprintf(type,sizeof(type),"%s %s",hp?"HPF":"LPF",filter->family==2?"Linkwitz-Riley":"Butterworth");
++        if(order%2){log_section(log,type,filter->frequency,0,0,filter->slope,index-start+1,&out->stage[index]);index++;}
++        for(int k=order/2-1;k>=0;k--) {
++            double q=1/(2*sin(3.14159265358979323846*(2*k+1)/(2*order)));
++            log_section(log,type,filter->frequency,0,q,filter->slope,index-start+1,&out->stage[index]);index++;
++        }
++    }
++    return ZP_RESPONSE_OK;
++}
++int zp_response_build(const zp_response_config *cfg,int mode,zp_cascade *out,FILE *log)
++{
++    if(!out)return ZP_RESPONSE_INVALID;
++    zp_cascade_init(out);
++    if(!cfg||!isfinite(cfg->sample_rate)||cfg->sample_rate<=0||mode<0||mode>=ZP_RESPONSE_MODES)return ZP_RESPONSE_INVALID;
++    double fs=cfg->sample_rate;int status=ZP_RESPONSE_OK;
++    if(log)fprintf(log,"Mode: %s Fs=%.17g Nyquist=%.17g\n",zp_response_mode_name(mode),fs,fs/2);
++    if(mode==ZP_RESPONSE_FULL||mode==ZP_RESPONSE_HPF||mode==ZP_RESPONSE_CROSSOVER)
++        status=crossover(&cfg->hp,fs,1,out,log);
++    if(status)goto failed;
++    if(mode==ZP_RESPONSE_FULL||mode==ZP_RESPONSE_EQ) {
++        if(!cfg->eq_enabled){if(log)fprintf(log,"EQ BYPASS (channel enable = 0)\n");}
++        else for(int band=0;band<31;band++) {
++            const zp_response_eq *eq=&cfg->eq[band];
++            if(!eq->enabled){if(log)fprintf(log,"EQ band=%d BYPASS\n",band+1);continue;}
++            if(!isfinite(eq->frequency)||eq->frequency<=0||eq->frequency>=fs/2||!isfinite(eq->q)||eq->q<=0||
++               !isfinite(eq->gain)||eq->gain < -30||eq->gain > 30){status=ZP_RESPONSE_INVALID;goto failed;}
++            zp_biquad section;const char *type;double q=eq->q;
++            if(eq->type==7){section=zp_biquad_peaking(fs,eq->frequency,q,eq->gain);type="PEQ";}
++            /* APK chart/c.java uses min(Q,2) for its shelf model. */
++            else if(eq->type==5){q=fmin(q,2);section=zp_biquad_highshelf(fs,eq->frequency,q,eq->gain);type="High shelf";}
++            else if(eq->type==6){q=fmin(q,2);section=zp_biquad_lowshelf(fs,eq->frequency,q,eq->gain);type="Low shelf";}
++            else {status=ZP_RESPONSE_UNSUPPORTED;goto failed;}
++            zp_cascade_push(out,section);
++            log_section(log,type,eq->frequency,eq->gain,q,0,band+1,&section);
++        }
++    }
++    if(mode==ZP_RESPONSE_FULL||mode==ZP_RESPONSE_LPF||mode==ZP_RESPONSE_CROSSOVER)
++        status=crossover(&cfg->lp,fs,0,out,log);
++    if(status)goto failed;
++    return ZP_RESPONSE_OK;
++failed:
++    if(log)fprintf(log,"Response unavailable: %s; partial cascade not plotted.\n",status==ZP_RESPONSE_UNSUPPORTED?"unsupported filter":"invalid parameter");
++    zp_cascade_init(out);
++    return status;
++}
++double zp_response_frequency(int index,int count,double fs)
++{
++    if(count<2||index<0||index>=count||!isfinite(fs)||fs/2<=ZP_RESPONSE_MIN)return NAN;
++    double high=fmin(ZP_RESPONSE_MAX,nextafter(fs/2,0));
++    if(index==count-1)return high;
++    return fmin(high,ZP_RESPONSE_MIN*pow(high/ZP_RESPONSE_MIN,(double)index/(count-1)));
++}
+--- /dev/null
++++ b/src/dsp/response.h
+@@ -0,0 +1,34 @@
++#ifndef ZP_DSP_RESPONSE_H
++#define ZP_DSP_RESPONSE_H
++#include "biquad.h"
++#include <stdio.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define ZP_RESPONSE_POINTS 2048
++#define ZP_RESPONSE_FS 48000.0
++#define ZP_RESPONSE_MIN 20.0
++#define ZP_RESPONSE_MAX 20000.0
++
++enum { ZP_RESPONSE_FULL, ZP_RESPONSE_HPF, ZP_RESPONSE_LPF,
++       ZP_RESPONSE_EQ, ZP_RESPONSE_CROSSOVER, ZP_RESPONSE_MODES };
++enum { ZP_RESPONSE_OK, ZP_RESPONSE_INVALID, ZP_RESPONSE_UNSUPPORTED };
++typedef struct { int family, slope, known; double frequency; } zp_response_filter;
++typedef struct { int type, enabled; double frequency, gain, q; } zp_response_eq;
++typedef struct {
++    double sample_rate;
++    zp_response_filter hp, lp;
++    int eq_enabled;
++    zp_response_eq eq[31];
++} zp_response_config;
++
++const char *zp_response_mode_name(int mode);
++/* All coefficients are synthesized from decoded parameters, never USB words. */
++int zp_response_build(const zp_response_config *config,int mode,zp_cascade *out,FILE *debug);
++double zp_response_frequency(int index,int count,double fs);
++#ifdef __cplusplus
++}
++#endif
++#endif
+--- a/src/gui/console.h
++++ b/src/gui/console.h
+@@ -125,16 +125,55 @@
+     return f;
+ }
+ 
+-static double console_filter_db(console_filter filter, double cutoff, double freq, int hp)
+-{
+-    if (!filter.known || !filter.slope || filter.family == 1 || cutoff <= 0 || cutoff >= 24000)
+-        return 0;
+-    double ratio = tan(3.141592653589793 * freq / 48000) / tan(3.141592653589793 * cutoff / 48000);
+-    if (hp) ratio = 1/ratio;
+-    double n = filter.slope/6.0;
+-    if (filter.family == 2) return -20*log10(1+pow(ratio, n));
+-    return -10*log10(1+pow(ratio, 2*n));
+-}
++static zp_response_config console_response_config(int channel)
++{
++    zp_response_config cfg={0};
++    int base=136*channel;
++    console_filter hp=decode_filter(A.dsp_values[base+138],1);
++    console_filter lp=decode_filter(A.dsp_values[base+142],0);
++    cfg.sample_rate=ZP_RESPONSE_FS;
++    cfg.hp=(zp_response_filter){hp.family,hp.slope,hp.known,dsp_frequency(A.dsp_values[base+139])};
++    cfg.lp=(zp_response_filter){lp.family,lp.slope,lp.known,dsp_frequency(A.dsp_values[base+143])};
++    /* Vendor BTService.s uses address - 1; EQ enable is vendor address 66+ch. */
++    cfg.eq_enabled=A.dsp_values[65+channel]!=0;
++    for(int band=0;band<31;band++) {
++        int id=base+147+4*band;
++        cfg.eq[band]=(zp_response_eq){A.dsp_values[id-1],1,dsp_frequency(A.dsp_values[id]),
++            ((double)A.dsp_values[id+1]-500)/10,A.dsp_values[id+2]*19.0/600};
++        /* Vendor MainActivity sets Q display scale=19/6. chart/c.java divides
++           displayed Q by that scale for PEQ alpha; shelves use displayed Q. */
++        if(cfg.eq[band].type==7)cfg.eq[band].q=A.dsp_values[id+2]/100.0;
++    }
++    return cfg;
++}
++
++static void console_response_log(void)
++{
++    if(!A.dsp_valid){snprintf(A.dsp_status,sizeof(A.dsp_status),"Baca DSP sebelum ekspor response.");return;}
++    char path[]="/tmp/zp84-response-XXXXXX";
++    int fd=mkstemp(path);
++    if(fd<0){snprintf(A.dsp_status,sizeof(A.dsp_status),"Gagal membuat log response: %s",strerror(errno));return;}
++    FILE *fp=fdopen(fd,"w");
++    if(!fp){close(fd);unlink(path);snprintf(A.dsp_status,sizeof(A.dsp_status),"Gagal membuka log response.");return;}
++    zp_response_config cfg=console_response_config(A.cur_ch);
++    fprintf(fp,"CH%d parameter model; Fs=%.0f; not measured hardware coefficients\n",A.cur_ch+1,cfg.sample_rate);
++    for(int mode=0;mode<ZP_RESPONSE_MODES;mode++) {
++        zp_cascade cascade;
++        fprintf(fp,"\nMODE %s\n",zp_response_mode_name(mode));
++        if(zp_response_build(&cfg,mode,&cascade,fp)!=ZP_RESPONSE_OK)continue;
++        fprintf(fp,"frequency_hz,response_db\n");
++        for(int i=0;i<ZP_RESPONSE_POINTS;i++) {
++            double f=zp_response_frequency(i,ZP_RESPONSE_POINTS,cfg.sample_rate);
++            fprintf(fp,"%.12g,%.12g\n",f,zp_cascade_response_db(&cascade,cfg.sample_rate,f));
++        }
++    }
++    int failed=ferror(fp);
++    if(fclose(fp)!=0)failed=1;
++    if(failed){unlink(path);snprintf(A.dsp_status,sizeof(A.dsp_status),"Gagal menulis log response.");}
++    else snprintf(A.dsp_status,sizeof(A.dsp_status),"Log response: %s",path);
++}
++
++static const unsigned long response_colors[8]={0xffb454,0xa997ff,0x9aa7bb,0xff879a,0x92c96a,0x7bbcff,0xde9fdb,0xe6df89};
+ 
+ #include "controls.h"
+ #include "layout.h"
+@@ -681,28 +720,23 @@
+         ctext(x-18,296,36,A.dim,b);
+     }
+     if(A.dsp_valid) {
+-        for(int c=0;c<8;c++) {
+-            if(c!=A.cur_ch && !(A.overlay_mask&(1u<<c)))continue;
+-            zp_cascade eq;zp_cascade_init(&eq);
+-            for(int band=0;band<31;band++) {
+-                int id=136*c+147+4*band;
+-                double freq=dsp_frequency(A.dsp_values[id]);
+-                double gain=((double)A.dsp_values[id+1]-500)/10;
+-                double q=A.dsp_values[id+2]*(19.0/6)/100;
+-                if(freq>=10&&freq<=23000&&q>0&&gain>=-30&&gain<=30)
+-                    zp_cascade_push(&eq,zp_biquad_peaking(48000,freq,q,gain));
+-            }
+-            console_filter hp=decode_filter(A.dsp_values[136*c+138],1),lp=decode_filter(A.dsp_values[136*c+142],0);
+-            int previous=0, previous_visible=0;
+-            for(int x=0;x<=gw;x++) {
+-                double freq=20*pow(1000,(double)x/gw);
+-                double db=zp_cascade_response_db(&eq,48000,freq);
+-                db+=console_filter_db(hp,dsp_frequency(A.dsp_values[136*c+139]),freq,1);
+-                db+=console_filter_db(lp,dsp_frequency(A.dsp_values[136*c+143]),freq,0);
+-                int y=gy+(int)((20-zp_clampd(db,-20,20))*gh/40);
+-                int visible = db>=-20 && db<=20;
+-                if(x && (visible || previous_visible))line(gx+x-1,previous,gx+x,y,c==A.cur_ch?purple:0x9ba293);
+-                previous=y; previous_visible=visible;
++        for(int pass=0;pass<9;pass++) {
++            int c=pass==8?A.cur_ch:pass;
++            if(pass<8&&(c==A.cur_ch||A.response_mode!=ZP_RESPONSE_FULL||!(A.overlay_mask&(1u<<c))))continue;
++            zp_response_config cfg=console_response_config(c);
++            zp_cascade cascade;
++            if(zp_response_build(&cfg,A.response_mode,&cascade,NULL)!=ZP_RESPONSE_OK)continue;
++            double prev_db=0; int prev_x=0;
++            for(int i=0;i<ZP_RESPONSE_POINTS;i++) {
++                double freq=zp_response_frequency(i,ZP_RESPONSE_POINTS,cfg.sample_rate);
++                double db=zp_cascade_response_db(&cascade,cfg.sample_rate,freq);
++                int x=gx+(int)lround(log(freq/20)/log(1000)*gw);
++                if(i&&isfinite(db)&&isfinite(prev_db)&&!(db>20&&prev_db>20)&&!(db< -20&&prev_db< -20)) {
++                    int y=gy+(int)lround((20-zp_clampd(db,-20,20))*gh/40);
++                    int py=gy+(int)lround((20-zp_clampd(prev_db,-20,20))*gh/40);
++                    line(prev_x,py,x,y,c==A.cur_ch?purple:response_colors[c]);
++                }
++                prev_db=db;prev_x=x;
+             }
+         }
+         int id=base+147+4*A.console_band;
+@@ -714,12 +748,16 @@
+         }
+     }
+     ui_font(A.font_small);
+-    ctext(gx,276,gw,A.dim,A.dsp_valid?"MODEL 48 kHz | status EQ bypass belum ditafsirkan | Bessel tidak dimodelkan":"Belum ada data USB - klik Baca DSP");
++    zp_response_config cfg=console_response_config(A.cur_ch);
++    zp_cascade check_response;
++    int response_status=zp_response_build(&cfg,A.response_mode,&check_response,NULL);
++    snprintf(b,sizeof(b),"CH%d %s | %s | F2 mode / F3 log | Model 48 kHz",A.cur_ch+1,zp_response_mode_name(A.response_mode),response_status==ZP_RESPONSE_OK?"": "filter tidak didukung / data invalid");
++    ctext(gx,276,gw,A.dim,A.dsp_valid?b:"Belum ada data USB - klik Baca DSP");
+     ui_font(A.font_struct);
+     for(int c=0;c<8;c++) {
+         int y=82+c*27;
+         frect(1180,y,44,20,A.panel);
+-        unsigned long color=c==A.cur_ch?purple:A.overlay_mask&(1u<<c)?0xd2cf39:A.dim;
++        unsigned long color=c==A.cur_ch?purple:A.overlay_mask&(1u<<c)?response_colors[c]:A.dim;
+         fframe(1180,y,44,20,color);snprintf(b,sizeof(b),"CH%d",c+1);ctext(1180,y+15,44,color,b);
+     }
+     frect(4,309,186,233,A.panel);console_car();
+--- a/src/gui/zp84gui.c
++++ b/src/gui/zp84gui.c
+@@ -19,6 +19,7 @@
+ #include <unistd.h>
+ 
+ #include "../dsp/design.h"
++#include "../dsp/response.h"
+ #include "../hid/zp_hid.h"
+ 
+ #define WIN_W 1240
+@@ -87,6 +88,7 @@
+     int dsp_view, dsp_page, dsp_reading, dsp_next, dsp_valid;
+     int delay_unit, console_band, console_modal;
+     unsigned int overlay_mask;
++    int response_mode;
+     char console_notice[160];
+     char dsp_status[160];
+     char dsp_time[32];
+@@ -967,6 +969,8 @@
+         break;
+     case KeyPress: {
+         KeySym ks = XLookupKeysym(&ev->xkey, 0);
++        if(A.dsp_view==2&&!A.console_modal&&ks==XK_F2){A.response_mode=(A.response_mode+1)%ZP_RESPONSE_MODES;A.need_draw=1;break;}
++        if(A.dsp_view==2&&!A.console_modal&&ks==XK_F3){console_response_log();A.need_draw=1;break;}
+         if(ks==XK_F11){fader_kind=0;layout_cancel();window_toggle(1);break;}
+         if(ks==XK_Escape&&A.fullscreen&&!A.console_modal&&!fader_kind&&(!layout.ready||layout.dragging<0)){window_toggle(1);break;}
+         if(layout.ready&&layout.dragging>=0){if(ks==XK_Escape)layout_cancel();A.need_draw=1;break;}
+--- a/tests/zpgui_data_test.c
++++ b/tests/zpgui_data_test.c
+@@ -324,8 +324,43 @@
+     assert(lp.known && lp.family == 2 && lp.slope == 24);
+     assert(decode_filter(69, 0).slope == 0);
+     assert(!decode_filter(65535, 0).known);
+-    assert(fabs(console_filter_db(hp, 100, 100, 1) + 6.020599913) < 0.00001);
+-    assert(console_filter_db(decode_filter(69, 0), 5000, 1000, 0) == 0);
++    memset(&A,0,sizeof(A));
++    A.dsp_values[65+2]=1;
++    A.dsp_values[136*2+138]=20;
++    A.dsp_values[136*2+139]=100;
++    A.dsp_values[136*2+142]=57;
++    A.dsp_values[136*2+143]=6000;
++    for(int band=0;band<31;band++) {
++        int id=136*2+147+4*band;
++        A.dsp_values[id-1]=7;A.dsp_values[id]=1000;
++        A.dsp_values[id+1]=500;A.dsp_values[id+2]=239;
++    }
++    zp_response_config cfg=console_response_config(2);
++    zp_cascade response;
++    assert(cfg.eq_enabled && cfg.hp.slope==24 && cfg.lp.slope==36);
++    assert(fabs(cfg.eq[0].q-2.39)<1e-12);
++    assert(zp_response_build(&cfg,ZP_RESPONSE_FULL,&response,NULL)==ZP_RESPONSE_OK);
++    assert(response.count==37);
++    /* Raw Q239 displays 7.57, but the vendor PEQ uses effective Q2.39.
++       Compare an off-center response: center gain alone cannot catch this. */
++    int eqid=136*2+147;
++    A.dsp_values[eqid+1]=560;
++    cfg=console_response_config(2);
++    assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&response,NULL)==0);
++    double f=1200,w=2*acos(-1)*1000/48000,omega=2*acos(-1)*f/48000;
++    double alpha=sin(w)/((239*19.0/600)*2/(19.0/6));
++    double amp=pow(10,6.0/40),b0=1+alpha*amp,b1=-2*cos(w),b2=1-alpha*amp;
++    double a0=1+alpha/amp,a1=b1,a2=1-alpha/amp;
++    double nr=b0+b1*cos(omega)+b2*cos(2*omega),ni=-b1*sin(omega)-b2*sin(2*omega);
++    double dr=a0+a1*cos(omega)+a2*cos(2*omega),di=-a1*sin(omega)-a2*sin(2*omega);
++    assert(fabs(zp_cascade_response_db(&response,48000,f)-10*log10((nr*nr+ni*ni)/(dr*dr+di*di)))<1e-8);
++    A.dsp_values[eqid-1]=5;
++    cfg=console_response_config(2);
++    assert(fabs(cfg.eq[0].q-239*19.0/600)<1e-12); /* Shelf convention unchanged. */
++    A.dsp_values[67]=0;
++    cfg=console_response_config(2);
++    assert(!cfg.eq_enabled);
++    assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&response,NULL)==ZP_RESPONSE_OK&&response.count==0);
+     memset(&A, 0, sizeof(A));
+     A.dsp_view = 2;
+     XEvent click = {0};
+--- a/tests/zpmath_test.c
++++ b/tests/zpmath_test.c
+@@ -14,7 +14,7 @@
+ static void check(const char *what, double got, double want, double tol)
+ {
+     checks++;
+-    if (fabs(got - want) > tol) {
++    if (!isfinite(got) || fabs(got - want) > tol) {
+         failures++;
+         printf("FAIL %-46s got %10.4f want %10.4f (tol %.4f)\n", what, got,
+                want, tol);
+@@ -88,7 +88,7 @@
+         int order;
+         double at_f0;
+         double one_oct_up;
+-    } cases[] = {{12, -6.0, -14.0}, {24, -12.0, -28.0}, {48, -24.0, -56.0}};
++    } cases[] = {{12, -6.0206, -14.039}, {24, -6.0206, -24.752}, {36, -6.0206, -36.482}, {48, -6.0206, -48.496}};
+     size_t i;
+ 
+     for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+@@ -131,7 +131,7 @@
+     check("sum flat 250 Hz (woofer band)", SUM3(250.0), 0.0, 0.3);
+     check("sum flat 2 kHz (mid band)", SUM3(2000.0), 0.0, 0.3);
+     check("sum flat 8 kHz (tweeter band)", SUM3(8000.0), 0.0, 1.0);
+-    check("sum dip at crossover 800 Hz", SUM3(800.0), -4.5, 1.0);
++    check("power sum near crossover (makeup enabled)", SUM3(800.0), sum_power_db((double[]){-6.0206+woo.gain_db,-6.0206+mid.gain_db},2), 0.03);
+     check("rolloff below woofer HP at 40 Hz", SUM3(40.0), -24.7, 1.5);
+     check("near tweeter knee at 3 kHz", SUM3(3000.0), -2.4, 1.5);
+ #undef SUM3
+--- /dev/null
++++ b/tests/zpresponse_test.c
+@@ -0,0 +1,71 @@
++#include "../src/dsp/response.h"
++#include <assert.h>
++#include <math.h>
++#include <stdio.h>
++
++static void near(double got,double want,double tol){assert(isfinite(got));assert(fabs(got-want)<tol);}
++static zp_response_config fixture(void)
++{
++    static const double freq[31]={20,25,32,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000};
++    zp_response_config cfg={.sample_rate=48000,.hp={0,24,1,100},.lp={2,36,1,6000},.eq_enabled=1};
++    for(int i=0;i<31;i++)cfg.eq[i]=(zp_response_eq){7,1,freq[i],0,7.57/(19.0/6)};
++    cfg.eq[7].gain=1.9;cfg.eq[8].gain=3.3;cfg.eq[9].gain=3;cfg.eq[10].gain=1.9;
++    return cfg;
++}
++int main(int argc,char **argv)
++{
++    zp_response_config cfg=fixture();zp_cascade modes[ZP_RESPONSE_MODES];
++    for(int m=0;m<ZP_RESPONSE_MODES;m++)assert(zp_response_build(&cfg,m,&modes[m],NULL)==0);
++    near(zp_cascade_response_db(&modes[ZP_RESPONSE_HPF],48000,100),-3.01029995664,1e-7);
++    near(zp_cascade_response_db(&modes[ZP_RESPONSE_LPF],48000,6000),-6.02059991328,1e-7);
++    FILE *csv=argc>1?fopen(argv[1],"w"):NULL;
++    if(argc>1)assert(csv);
++    if(csv)fprintf(csv,"frequency,full,hpf,lpf,eq,crossover\n");
++    double lastlp=1,lasthp=-1e9,lastfull=1e9;
++    for(int i=0;i<2048;i++) {
++        double f=zp_response_frequency(i,2048,48000),db[5];
++        assert(f>=20&&f<=20000&&f<24000);
++        for(int m=0;m<5;m++){db[m]=zp_cascade_response_db(&modes[m],48000,f);assert(isfinite(db[m]));}
++        assert(db[1]>=lasthp-1e-8);assert(db[2]<=lastlp+1e-8);
++        if(f>=6000)assert(db[0]<lastfull);
++        if(f<50||f>10000)assert(db[3]<0.5); /* No EQ peaks away from enabled boosts. */
++        near(db[0],db[1]+db[2]+db[3],1e-8);
++        lastlp=db[2];lasthp=db[1];lastfull=db[0];
++        if(csv)fprintf(csv,"%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n",f,db[0],db[1],db[2],db[3],db[4]);
++    }
++    if(csv)assert(fclose(csv)==0);
++    assert(isnan(zp_cascade_response_db(&modes[0],48000,24001)));
++    /* Independent impulse DFT verifies phase, denominator signs, and normalization. */
++    zp_biquad b=zp_biquad_peaking(48000,125,7.57,3.3);zp_biquad_state state;
++    zp_biquad_reset(&state);double re=0,im=0,w=2*acos(-1)*125/48000;
++    for(int n=0;n<48000;n++){double y=zp_biquad_tick(&b,&state,n==0);re+=y*cos(w*n);im-=y*sin(w*n);}
++    zp_complex_response h=zp_biquad_response(&b,48000,125);
++    near(h.re,re,1e-8);near(h.im,im,1e-8);near(20*log10(hypot(h.re,h.im)),3.3,1e-8);
++    /* Butterworth orders 1..8, LR orders 2/4/6/8, independently checked BLT formula. */
++    for(int slope=6;slope<=48;slope+=6)for(int hp=0;hp<2;hp++) {
++        zp_cascade c;zp_cascade_init(&c);
++        assert(zp_cascade_push_butterworth(&c,48000,1000,slope,hp)==0);
++        double ratio=tan(acos(-1)*2000/48000)/tan(acos(-1)*1000/48000);if(hp)ratio=1/ratio;
++        near(zp_cascade_response_db(&c,48000,2000),-10*log10(1+pow(ratio,2*slope/6)),1e-8);
++        if(slope%12==0){zp_cascade_init(&c);assert(zp_cascade_push_lr(&c,48000,1000,slope,hp)==0);
++            near(zp_cascade_response_db(&c,48000,2000),-20*log10(1+pow(ratio,slope/6)),1e-8);}
++    }
++    for(int i=0;i<31;i++)cfg.eq[i].gain=0;
++    zp_cascade c;assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&c,NULL)==0&&c.count==31);
++    near(zp_cascade_response_db(&c,48000,50),0,1e-8);
++    cfg.eq_enabled=0;cfg.eq[0].type=999;
++    assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&c,NULL)==0&&c.count==0);
++    cfg.eq_enabled=1;assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&c,NULL)==ZP_RESPONSE_UNSUPPORTED&&c.count==0);
++    cfg=fixture();cfg.hp.family=1;assert(zp_response_build(&cfg,ZP_RESPONSE_FULL,&c,NULL)==ZP_RESPONSE_UNSUPPORTED);
++    cfg.hp.slope=0;cfg.lp.slope=0;cfg.eq_enabled=0;
++    assert(zp_response_build(&cfg,ZP_RESPONSE_FULL,&c,NULL)==0&&c.count==0);
++    for(int rate=32000;rate<=96000;rate+=16000)assert(zp_response_frequency(2047,2048,rate)<rate/2.0);
++    /* Genuine narrow EQ peaks at both extremes must remain visible. */
++    cfg=fixture();cfg.eq[0].gain=6;cfg.eq[30].gain=6;
++    assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&c,NULL)==0);
++    assert(zp_cascade_response_db(&c,48000,20)>5.99);
++    assert(zp_cascade_response_db(&c,48000,20000)>5.99);
++    cfg=fixture();cfg.eq[0].frequency=24000;assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&c,NULL)==ZP_RESPONSE_INVALID);
++    puts("Frequency response: 2048 samples, isolated filters, full cascade, impulse DFT, bypass and Nyquist PASS");
++    return 0;
++}

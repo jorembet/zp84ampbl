@@ -13,6 +13,76 @@ int mock_id_write(zp_conn *c,uint16_t id,uint16_t value)
 {
     (void)c;write_count++;last_id=id;last_value=value;return write_count==fail_write_at?ZP_ERR_TIMEOUT:write_error;
 }
+static void protection_tests(void)
+{
+    char *cwd=getcwd(NULL,0),dir[]="/tmp/zp84-protection-test-XXXXXX";
+    assert(cwd&&mkdtemp(dir)&&chdir(dir)==0);
+    snprintf(protection_path,sizeof(protection_path),"%s/limits.conf",dir);
+    memset(guards,0,sizeof(guards));memset(&A,0,sizeof(A));
+    A.connected=1;A.dsp_valid=1;output_locked=0;link_output=0;
+    for(int id=0;id<ZP_PARAM_COUNT;id++)if(preset_mapped(id)) {
+        unsigned v=0;while(v<=65535&&!preset_value_valid(id,v))v++;
+        assert(v<=65535);A.dsp_values[id]=v;
+    }
+    for(int ch=0;ch<8;ch++) {
+        int b=136*ch;A.dsp_values[b+138]=20;A.dsp_values[b+139]=ch<2?5000:30;
+        A.dsp_values[b+142]=25;A.dsp_values[b+143]=100;
+        A.dsp_values[26+ch]=5800;A.dsp_values[12+ch]=5700;
+        A.dsp_values[65+ch]=1;
+        for(int i=0;i<31;i++){A.dsp_values[b+146+4*i]=7;A.dsp_values[b+148+4*i]=500;}
+    }
+    int before=write_count;protection_confirm=0;assert(!protection_capture(0,1));
+    protection_confirm=1;assert(protection_capture(0,1));assert(write_count==before);
+    assert(!control_set(138,64)); /* HPF OFF */
+    assert(!control_set(139,1000)); /* Too low */
+    assert(!control_set(138,8)); /* 12 dB/oct instead of 24 */
+    assert(!control_set(148,620));assert(!control_set(26,6000));assert(!control_set(12,5800));
+    assert(!control_set(1900,600));assert(write_count==before);
+    assert(control_set(148,480));assert(control_set(26,5700));
+    assert(control_set(138,52)); /* Same family, steeper 36 dB/oct */
+    protection_confirm=1;assert(protection_capture(6,2));
+    assert(!control_set(136*6+143,200));assert(!control_set(136*6+142,69));
+    assert(!control_set(136*6+139,20));
+    /* Both linked destinations checked before the source is changed. */
+    link_output=1;before=write_count;assert(!control_set(136+139,1000));assert(write_count==before);link_output=0;
+    assert(preset_save_named(0,"Protected"));
+    A.dsp_values[136+139]=10;A.cur_ch=1;before=write_count;control_link_toggle();
+    assert(write_count==before&&!channel_linked(0));
+    /* A preset above the envelope cannot mute or write any register first. */
+    guards[0].eq[2]=470;before=write_count;preset_restore(0);assert(write_count==before);
+    guards[0].eq[2]=500;
+    memset(guards,0,sizeof(guards));protection_load();assert(guards[0].enabled&&guards[6].enabled);
+    /* Invalid snapshot cannot unmute; mute remains available. */
+    A.dsp_values[139]=10;A.dsp_values[2]=1;before=write_count;assert(!control_set(2,0));assert(write_count==before);
+    assert(control_set(2,1));
+    FILE *f=fopen(protection_path,"w");assert(f);fputs("broken",f);fclose(f);
+    protection_load();assert(protection_file_invalid);assert(!control_set(73,123));assert(control_set(2,1));
+    unlink(protection_path);unlink("zp84-preset-1.scene");
+    assert(chdir(cwd)==0);free(cwd);assert(rmdir(dir)==0);
+    memset(guards,0,sizeof(guards));protection_file_invalid=0;protection_confirm=0;protection_path[0]=0;link_output=0;
+}
+static void bluetooth_connect_tests(void)
+{
+    int fd[2];assert(socketpair(AF_UNIX,SOCK_STREAM,0,fd)==0);
+    memset(&A,0,sizeof(A));A.conn.fd=fd[0];bluetooth_pending=1;bluetooth_header_size=0;
+    clock_gettime(CLOCK_MONOTONIC,&bluetooth_started);
+    assert(bluetooth_poll(&A.conn)==0);assert(bluetooth_elapsed()<100);
+    unsigned char ready[4]={0};assert(write(fd[1],ready,2)==2);
+    assert(bluetooth_poll(&A.conn)==0&&bluetooth_pending);
+    assert(write(fd[1],ready+2,2)==2);
+    assert(bluetooth_poll(&A.conn)==1&&!bluetooth_pending);
+    unsigned char timeout_reply[4]={ZP_ERR_TIMEOUT,0,0,0},out[8],query[2]={0};size_t count=99;
+    assert(write(fd[1],timeout_reply,4)==4);
+    assert(bluetooth_xfer(&A.conn,query,2,6,NULL,out,sizeof(out),&count)==ZP_ERR_TIMEOUT);
+    assert(A.conn.fd==fd[0]&&count==0); /* DSP timeout does not destroy GATT transport. */
+    close(fd[0]);close(fd[1]);
+    assert(socketpair(AF_UNIX,SOCK_STREAM,0,fd)==0);
+    A.conn.fd=fd[0];bluetooth_pending=1;bluetooth_header_size=0;bluetooth_started.tv_sec-=30;
+    assert(bluetooth_poll(&A.conn)==-1&&!bluetooth_pending&&A.conn.fd==-1);close(fd[1]);
+    assert(socketpair(AF_UNIX,SOCK_STREAM,0,fd)==0);
+    A.conn.fd=fd[0];A.conn.custom_close=bluetooth_close;bluetooth_pending=1;
+    do_connect();assert(!bluetooth_pending&&A.conn.fd==-1&&!A.connected);close(fd[1]);
+}
 static void control_tests(void)
 {
     memset(&A,0,sizeof(A));A.connected=1;A.dsp_valid=1;A.dsp_view=2;
@@ -43,6 +113,54 @@ static void control_tests(void)
     write_error=ZP_ERR_TIMEOUT;count=write_count;assert(!control_write(148,510)&&!A.dsp_valid);assert(A.dsp_values[148]==620);
     assert(!control_write(148,520)&&write_count==count+1);write_error=0;
     assert(mixer_id(1,7,1)==1539&&mixer_id(3,7,3)==1285);
+}
+
+static void link_tests(void)
+{
+    memset(&A,0,sizeof(A));A.connected=1;A.dsp_valid=1;output_locked=0;link_output=0;
+    for(int c=0;c<8;c++) {
+        A.dsp_values[26+c]=5500+10*c;A.dsp_values[73+c]=100*c;A.dsp_values[2+c]=c%2;
+        A.dsp_values[138+136*c]=56;A.dsp_values[139+136*c]=100+c;
+        A.dsp_values[142+136*c]=25;A.dsp_values[143+136*c]=5000+c;
+        for(int b=0;b<31;b++) {
+            A.dsp_values[147+136*c+4*b]=1000+c;
+            A.dsp_values[148+136*c+4*b]=500+c;
+            A.dsp_values[149+136*c+4*b]=240+c;
+        }
+    }
+    A.cur_ch=1; /* R is selected: CH2 must be copied to CH1. */
+    A.dsp_values[150]=1234;A.dsp_values[1482]=25601;A.dsp_values[1490]=0;
+    console_click(1140,695);assert(channel_linked(0)&&channel_linked(1)&&!channel_linked(2));
+    assert(A.dsp_values[26]==5510&&A.dsp_values[73]==100&&A.dsp_values[2]==1);
+    assert(A.dsp_values[139]==101&&A.dsp_values[143]==5001);
+    for(int b=0;b<31;b++) {
+        assert(A.dsp_values[147+4*b]==1001);
+        assert(A.dsp_values[148+4*b]==501);
+        assert(A.dsp_values[149+4*b]==241);
+    }
+    assert(A.dsp_values[150]==1234&&A.dsp_values[1482]==25601&&A.dsp_values[1490]==0);
+    assert(A.dsp_values[28]==5520); /* Other pair untouched. */
+    control_edit(148,2,"Gain",0,-12,12);strcpy(edit_text,"-4");control_apply();
+    assert(A.dsp_values[148]==460&&A.dsp_values[284]==460);
+    assert(control_set(139+136,77));assert(A.dsp_values[139]==77);
+    assert(control_set(149+136,200));assert(A.dsp_values[149]==200);
+    assert(control_set(73,208));assert(A.dsp_values[74]==208);
+    assert(control_set(2,0));assert(A.dsp_values[3]==0);
+    assert(control_set(27,600));assert(A.dsp_values[26]==600);
+    A.cur_ch=0;control_eq_reset(0);A.cur_ch=1;control_eq_reset(1);
+    assert(A.dsp_values[148]==460&&A.dsp_values[284]==460);
+    A.console_modal=0;A.cur_ch=2;console_click(1140,695);
+    assert(channel_linked(2)&&channel_linked(0)&&A.dsp_values[29]==5520);
+    int count=write_count;console_click(1140,695);
+    assert(!channel_linked(2)&&channel_linked(0)&&write_count==count);
+    output_locked=1;console_click(1140,695);assert(!channel_linked(2)&&write_count==count);output_locked=0;
+    fail_write_at=write_count+2;
+    assert(!control_set(148,520));assert(!A.dsp_valid&&!link_output);
+    assert(A.dsp_values[148]==520&&A.dsp_values[284]==460);
+    fail_write_at=0;A.dsp_valid=1;
+    A.dsp_values[139]=88;fail_write_at=write_count+2;A.cur_ch=0;control_link_toggle();
+    assert(!A.dsp_valid&&!link_output);fail_write_at=0;
+    A.dsp_valid=1;A.connected=0;count=write_count;control_link_toggle();assert(!link_output&&write_count==count);
 }
 
 static void scene_tests(void)
@@ -258,7 +376,10 @@ static void distance_tests(void)
 int main(void)
 {
     layout_tests();
+    protection_tests();
+    bluetooth_connect_tests();
     control_tests();
+    link_tests();
     option_tests();
     output_marks_tests();
     scene_tests();
@@ -275,8 +396,43 @@ int main(void)
     assert(lp.known && lp.family == 2 && lp.slope == 24);
     assert(decode_filter(69, 0).slope == 0);
     assert(!decode_filter(65535, 0).known);
-    assert(fabs(console_filter_db(hp, 100, 100, 1) + 6.020599913) < 0.00001);
-    assert(console_filter_db(decode_filter(69, 0), 5000, 1000, 0) == 0);
+    memset(&A,0,sizeof(A));
+    A.dsp_values[65+2]=1;
+    A.dsp_values[136*2+138]=20;
+    A.dsp_values[136*2+139]=100;
+    A.dsp_values[136*2+142]=57;
+    A.dsp_values[136*2+143]=6000;
+    for(int band=0;band<31;band++) {
+        int id=136*2+147+4*band;
+        A.dsp_values[id-1]=7;A.dsp_values[id]=1000;
+        A.dsp_values[id+1]=500;A.dsp_values[id+2]=239;
+    }
+    zp_response_config cfg=console_response_config(2);
+    zp_cascade response;
+    assert(cfg.eq_enabled && cfg.hp.slope==24 && cfg.lp.slope==36);
+    assert(fabs(cfg.eq[0].q-2.39)<1e-12);
+    assert(zp_response_build(&cfg,ZP_RESPONSE_FULL,&response,NULL)==ZP_RESPONSE_OK);
+    assert(response.count==37);
+    /* Raw Q239 displays 7.57, but the vendor PEQ uses effective Q2.39.
+       Compare an off-center response: center gain alone cannot catch this. */
+    int eqid=136*2+147;
+    A.dsp_values[eqid+1]=560;
+    cfg=console_response_config(2);
+    assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&response,NULL)==0);
+    double f=1200,w=2*acos(-1)*1000/48000,omega=2*acos(-1)*f/48000;
+    double alpha=sin(w)/((239*19.0/600)*2/(19.0/6));
+    double amp=pow(10,6.0/40),b0=1+alpha*amp,b1=-2*cos(w),b2=1-alpha*amp;
+    double a0=1+alpha/amp,a1=b1,a2=1-alpha/amp;
+    double nr=b0+b1*cos(omega)+b2*cos(2*omega),ni=-b1*sin(omega)-b2*sin(2*omega);
+    double dr=a0+a1*cos(omega)+a2*cos(2*omega),di=-a1*sin(omega)-a2*sin(2*omega);
+    assert(fabs(zp_cascade_response_db(&response,48000,f)-10*log10((nr*nr+ni*ni)/(dr*dr+di*di)))<1e-8);
+    A.dsp_values[eqid-1]=5;
+    cfg=console_response_config(2);
+    assert(fabs(cfg.eq[0].q-239*19.0/600)<1e-12); /* Shelf convention unchanged. */
+    A.dsp_values[67]=0;
+    cfg=console_response_config(2);
+    assert(!cfg.eq_enabled);
+    assert(zp_response_build(&cfg,ZP_RESPONSE_EQ,&response,NULL)==ZP_RESPONSE_OK&&response.count==0);
     memset(&A, 0, sizeof(A));
     A.dsp_view = 2;
     XEvent click = {0};
@@ -338,6 +494,12 @@ int main(void)
         assert(A.dsp_values[0] == 0x1234);
         assert(strstr(A.dsp_status, "Gagal"));
     }
+    int blefd[2];assert(socketpair(AF_UNIX,SOCK_STREAM,0,blefd)==0);
+    A.conn.fd=blefd[0];A.conn.custom_xfer=bluetooth_xfer;A.connected=1;A.dsp_valid=1;
+    response_mode=3;do_readids();read_dsp_batch();
+    assert(A.connected&&!A.dsp_valid&&!A.dsp_reading&&A.conn.fd==blefd[0]);
+    assert(A.dsp_values[0]==0x1234);
+    close(blefd[0]);close(blefd[1]);A.conn.fd=-1;A.conn.custom_xfer=NULL;
     dsp_page_move(-1);
     assert(A.dsp_page == 0);
     for (int i = 0; i < 100; i++) dsp_page_move(1);

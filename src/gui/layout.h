@@ -94,6 +94,7 @@ static void layout_apply_delays(void)
     layout_init();
     if(!layout.calibrated[layout.mode]){snprintf(A.console_notice,sizeof(A.console_notice),"Atur lebar denah dalam meter terlebih dahulu.");return;}
     if(output_locked){snprintf(A.console_notice,sizeof(A.console_notice),"Output terkunci. Klik Unlock output terlebih dahulu.");return;}
+    if(link_output){snprintf(A.console_notice,sizeof(A.console_notice),"Lepas Link pairs sebelum menerapkan delay berbeda dari posisi speaker.");return;}
     if(!control_ready())return;
     uint16_t values[8];int count=0,done=0;
     for(int c=0;c<8;c++) {

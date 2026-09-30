@@ -46,6 +46,7 @@ int zp_find_hidraw(char *out, size_t out_len)
 
 int zp_open(zp_conn *c, const char *path)
 {
+    c->custom_xfer=NULL;c->custom_close=NULL;
     c->timeout_ms = 400;
     c->tag = ZP_FRAME_TAG;
     c->last_rx = 0;
@@ -63,6 +64,7 @@ int zp_open(zp_conn *c, const char *path)
 
 void zp_close(zp_conn *c)
 {
+    if(c->custom_close){c->custom_close(c);c->custom_close=NULL;c->custom_xfer=NULL;return;}
     if (c->fd >= 0)
         close(c->fd);
     c->fd = -1;
@@ -356,6 +358,7 @@ int zp_recv(zp_conn *c, uint8_t *cmd, uint8_t *out, size_t out_cap,
 int zp_xfer(zp_conn *c, const uint8_t *payload, size_t len, uint8_t cmd,
             uint8_t *rsp_cmd, uint8_t *out, size_t out_cap, size_t *out_len)
 {
+    if(c->custom_xfer)return c->custom_xfer(c,payload,len,cmd,rsp_cmd,out,out_cap,out_len);
     uint8_t local = 0;
     uint8_t *slot = rsp_cmd ? rsp_cmd : &local;
     int r;

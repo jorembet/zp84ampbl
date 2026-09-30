@@ -14,7 +14,7 @@ static int checks = 0;
 static void check(const char *what, double got, double want, double tol)
 {
     checks++;
-    if (fabs(got - want) > tol) {
+    if (!isfinite(got) || fabs(got - want) > tol) {
         failures++;
         printf("FAIL %-46s got %10.4f want %10.4f (tol %.4f)\n", what, got,
                want, tol);
@@ -88,7 +88,7 @@ static void test_crossover_slopes(void)
         int order;
         double at_f0;
         double one_oct_up;
-    } cases[] = {{12, -6.0, -14.0}, {24, -12.0, -28.0}, {48, -24.0, -56.0}};
+    } cases[] = {{12, -6.0206, -14.039}, {24, -6.0206, -24.752}, {36, -6.0206, -36.482}, {48, -6.0206, -48.496}};
     size_t i;
 
     for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -131,7 +131,7 @@ static void test_three_way_sum(void)
     check("sum flat 250 Hz (woofer band)", SUM3(250.0), 0.0, 0.3);
     check("sum flat 2 kHz (mid band)", SUM3(2000.0), 0.0, 0.3);
     check("sum flat 8 kHz (tweeter band)", SUM3(8000.0), 0.0, 1.0);
-    check("sum dip at crossover 800 Hz", SUM3(800.0), -4.5, 1.0);
+    check("power sum near crossover (makeup enabled)", SUM3(800.0), sum_power_db((double[]){-6.0206+woo.gain_db,-6.0206+mid.gain_db},2), 0.03);
     check("rolloff below woofer HP at 40 Hz", SUM3(40.0), -24.7, 1.5);
     check("near tweeter knee at 3 kHz", SUM3(3000.0), -2.4, 1.5);
 #undef SUM3
