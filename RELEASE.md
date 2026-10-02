@@ -1,10 +1,10 @@
 # Release notes — Zevox ZP 8.4 AMP DSP Editor
 
-## v1.0.0 — 2 October 2026
+## Paket rilis — 2 Oktober 2026
 
-First tagged release of the Linux and web DSP editor for the Zevox ZP 8.4
-car amplifier. Commit `d7f596b`, 27 commits, ~15k lines of C11 plus a
-Python BLE worker.
+Paket binary Linux x86_64 untuk desktop GUI, web UI, dan alat protokol DSP
+Zevox ZP 8.4 AMP. Paket dibangun dari source tree repository pada tanggal di
+atas; ini bukan klaim bahwa tag GitHub telah dibuat.
 
 The USB protocol was reverse engineered from the vendor PC tool and the
 parameter map was confirmed against real hardware. The Bluetooth path
@@ -133,24 +133,23 @@ do not.
 
 ---
 
-## Changed and fixed since the 30 September snapshot
+## Perubahan sejak snapshot 30 September
 
-This is the delta against the prebuilt binaries in `release/`, which were
-built at `579beaa`. Everything above it landed in `3262fde` and `3e5d0be` and
-is simply new in the first tagged release.
+Binary pada `release/` sebelumnya berasal dari snapshot `579beaa`. Paket ini
+dibangun ulang dari source tree saat ini dan menyertakan perbaikan baca BLE
+serta perlindungan mixer saat output terkunci.
 
 ### Bluetooth read resilience — `d7f596b`
 
-- A BLE read whose notification is lost is now retried up to three times
-  instead of failing the transfer.
+- A BLE read whose notification is lost is attempted up to three times
+  instead of failing the transfer immediately.
 - If GATT drops mid-read the worker reconnects **once** — disconnect,
   200 ms settle, `wait_for(connect(), 8 s)`, re-resolve the vendor
   characteristics, re-subscribe — and re-issues the same query. A second
   disconnect during the same exchange fails the read instead of looping.
 - Writes are still never replayed, because a repeated write could apply a
   change twice. This is unchanged and deliberate.
-- The per-response timeout went from 1.5 s to 2.0 s, and read retries from 3
-  to 3 with a reconnect in between.
+- Each BLE response has a 2.0 s timeout.
 - The GUI read budget was previously derived from the expected reply size
   and could kill the worker mid-reconnect. It is now a flat 25 s for an
   id-read header and 5 s for the body. USB is unchanged at 400 ms.
@@ -200,25 +199,12 @@ These are not new; they are now written down.
 
 ---
 
-## Verified
+## Status verifikasi paket
 
-`make test` was run on the release commit. All suites pass.
-
-| Suite | Result |
-|---|---|
-| `tests/test_ble.py` | 7 cases, OK — CRC vector, fragmented and coalesced notifications, corrupt frame, transport, cached-device path, lost-read retry, write-not-replayed |
-| `tests/zpframe_test.c` | 59 checks, 0 failures |
-| `tests/zpmath_test.c` | 50 checks, 0 failures |
-| `tests/zpgui_data_test.c` | 254 assertions across 9 suites |
-| `tests/zpresponse_test.c` | 24 assertions, PASS |
-
-About 394 assertions in total, against real vendor constants — for example
-`dsp_frequency(0x80c8) == 20.0`, `dsp_delay_ms(208) == 0.208`, HPF `0x8064`
-decoding to 10 Hz on channels 5 and 6.
-
-The console suite includes `zp84gui.c` directly with the transport mocked, so
-the layout, protection, preset, link, marks, and distance logic are all
-exercised without hardware or an X server.
+Binary paket dibangun sebagai ELF Linux x86_64 dan semua berkas pada manifest
+lulus pemeriksaan SHA-256. `scripts2/build-release.sh` dapat digunakan untuk
+membangun ulang paket dan checksum. Suite pengujian tersedia melalui
+`make test`; suite tidak dijalankan pada proses pengemasan ini.
 
 **Confirmed on hardware:** the USB path — framing, the 1,934-register read,
 the write-then-verify cycle, and the parameter encodings.
@@ -228,8 +214,8 @@ the write-then-verify cycle, and the parameter encodings.
 ## Known limitations
 
 - **BLE read and write are unverified on hardware.** The worker uses the
-  same framing as USB and is covered by unit tests including the retry and
-  reconnect paths, but treat Bluetooth as unproven. See
+  same framing as USB and has unit tests for retry and reconnect paths, but
+  treat Bluetooth as unproven. See
   [docs/BLUETOOTH.md](docs/BLUETOOTH.md).
 - **Speaker protection is application-side.** It guards this app's write
   path. It cannot stop the vendor app, another tool, or the amplifier's own
@@ -271,23 +257,26 @@ The GUI also offers this on first launch through a password dialog.
 
 ## Artifacts
 
-`release/linux-x86_64/` holds stripped `zp84gui`, `zp84web`, `zpsniff`, and
-the udev rule, with `release/SHA256SUMS` as the manifest:
+`release/linux-x86_64/` berisi binary stripped `zp84gui`, `zp84web`, dan
+`zpsniff`, worker BLE `zp84-ble.py`, aturan udev, serta README paket. Helper
+BLE harus tetap berada di sebelah `zp84gui`. Manifest checksum ada di
+`release/SHA256SUMS`:
 
 ```sh
 sha256sum -c release/SHA256SUMS
 ```
 
-Note that the checked-in binaries are a snapshot from 30 September 2026 and
-predate the Bluetooth read-retry and output-lock changes in this release.
-Build from source to get the current binaries, or regenerate `release/` and
-the manifest.
+Untuk membangun ulang binary dan manifest pada Linux x86_64:
+
+```sh
+./scripts2/build-release.sh
+```
 
 ## Requirements
 
 - Linux with hidraw
 - gcc or clang, make; `libx11-dev` for the GUI
-- Python 3 and `bleak` for Bluetooth
+- BlueZ, Python 3, `bleak`, and `dbus-fast` for Bluetooth
 
 ## License
 
