@@ -6,7 +6,7 @@ tegangan/daya dalam firmware DSP dan bukan jaminan speaker tidak rusak.
 
 ## Penggunaan
 
-1. Tentukan batas dari spesifikasi model speaker dan tuning box. Merek Audax
+1. Tentukan batas dari spesifikasi model speaker dan tuning box. Merek
    dan keterangan ported saja belum cukup menentukan cutoff subsonic.
 2. Hubungkan perangkat, Baca DSP, lalu atur crossover dan level sesuai batas
    yang sudah diverifikasi. Jangan memakai setelan sekarang sebagai acuan
