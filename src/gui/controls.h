@@ -139,7 +139,7 @@ static void control_apply(void)
         snprintf(A.console_notice,sizeof(A.console_notice),"Nilai tidak valid. Rentang %.2f sampai %.2f.",edit_min,edit_max);return;
     }
     if(edit_kind==7){layout_set_width(v);A.console_modal=8;return;}
-    if ((edit_kind==4||edit_kind==5)&&output_locked) {snprintf(A.console_notice,sizeof(A.console_notice),"Output terkunci.");return;}
+    if ((edit_kind==4||edit_kind==5||edit_kind==6)&&output_locked) {snprintf(A.console_notice,sizeof(A.console_notice),"Output terkunci. Buka Lock output sebelum mengubah mixer atau output.");return;}
     if (edit_kind==5) {if(!control_ready()||output_locked)return;control_level(edit_id,v);if(A.dsp_valid)A.console_modal=0;return;}
     uint16_t raw=(uint16_t)lround(v);
     if(edit_kind==1) raw=v<100?(uint16_t)((int)lround(v*10)|0x8000):(uint16_t)lround(v);
@@ -170,6 +170,7 @@ static void control_release(int y)
 {
     int kind=fader_kind,index=fader_index;fader_kind=0;
     if(!kind||!control_ready())return;
+    if(kind==5&&output_locked){snprintf(A.console_notice,sizeof(A.console_notice),"Output terkunci. Buka Lock output sebelum mengubah mixer.");return;}
     if(kind==1)control_set(148+136*fader_channel+4*index,(uint16_t)lround(500+120*(1-2*zp_clampd((y-428)/69.0,0,1))));
     if(kind==2)control_level(index,60*(1-zp_clampd((y-634)/79.0,0,1)));
     if(kind==5)control_set(index,(uint16_t)(256*mixer_drag_gain()+(A.dsp_values[index]&1)));

@@ -339,6 +339,7 @@ static void draw_mixer(void)
     frect(92,top,1040,height,panel);fframe(92,top,1040,height,border);
     frect(93,top+1,1038,26,0x293847);
     ui_font(A.font_struct);dtext(101,top+19,ink,"Mixer");
+    if(output_locked)dtext(1008,top+19,A.warn,"Output terkunci");
     line(1105,top+7,1117,top+19,A.dim);line(1117,top+7,1105,top+19,A.dim);
     if(!known) {
         dtext(120,top+65,ink,"Pilih AUX, Bluetooth atau High level setelah Baca DSP.");
@@ -383,7 +384,7 @@ static void draw_mixer(void)
         snprintf(label,sizeof(label),"OutCh%d",c+1);ui_font(A.font_heading);ctext(x-50,bottom+38,100,ink,label);ui_font(A.font_struct);
     }
     ui_font(A.font_small);
-    ui_text_fit(108,top+height-12,1005,A.dim,A.console_notice[0]?A.console_notice:"Klik power: routing | Geser slider: gain | Klik angka: edit | Esc: batal / tutup");
+    ui_text_fit(108,top+height-12,1005,A.dim,A.console_notice[0]?A.console_notice:output_locked?"Mixer terkunci. Tutup panel lalu klik Unlock output untuk mengubah routing atau level.":"Klik power: routing | Geser slider: gain | Klik angka: edit | Esc: batal / tutup");
     ui_font(A.font_struct);
 }
 static void mixer_click(int x,int y)
@@ -394,6 +395,11 @@ static void mixer_click(int x,int y)
     }
     int source=A.dsp_values[1554];
     if(!A.dsp_valid||(source!=1&&source!=2&&source!=3))return;
+    if(output_locked) {
+        fader_kind=0;
+        snprintf(A.console_notice,sizeof(A.console_notice),"Output terkunci. Tutup panel lalu klik Unlock output untuk mengubah mixer.");
+        return;
+    }
     for(int c=0;c<8;c++)for(int i=0;i<mixer_rows();i++) {
         int xx=mixer_cell_x(c),yy=mixer_cell_y(i),id=mixer_id(source,c,i);
         if(hit(xx+6,yy+2,34,25,x,y)){control_write(id,A.dsp_values[id]^1);return;}

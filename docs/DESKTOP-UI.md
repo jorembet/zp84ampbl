@@ -164,7 +164,8 @@ skala yang sudah dikalibrasi tetap dipertahankan.
   Hanya nilai yang berbeda dikirim. Penerapan berlangsung sinkron; UI bisa
   menunggu selama transaksi USB. Kegagalan berhenti pada transaksi pertama
   yang gagal dan meminta pembacaan ulang karena hasil dapat parsial.
-- Output lock juga mencegah pemuatan preset. Reset/Restore EQ lama dibuang
+- Output lock juga mencegah pengubahan routing/level di Mixer dan pemuatan
+  preset. Reset/Restore EQ lama dibuang
   setelah pemuatan preset berhasil agar undo tidak menimpa preset baru.
 
 Preset lokal ini **bukan slot preset internal amplifier** dan bukan format
