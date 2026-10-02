@@ -39,7 +39,9 @@ static int bluetooth_xfer(zp_conn *c,const uint8_t *payload,size_t len,uint8_t c
     if(len>128||!payload||!out)return ZP_ERR_ARG;
     uint8_t req[131]={cmd,(uint8_t)(len>>8),(uint8_t)len},header[4];memcpy(req+3,payload,len);
     if(send(c->fd,req,len+3,MSG_NOSIGNAL)!=(ssize_t)(len+3))goto failed;
-    int budget=cmd==ZP_CMD_ID?(int)((len+5)/6)*5000+1000:4000;
+    /* A BLE read may spend several seconds retrying a missed notification or
+       re-establishing GATT. Do not kill the worker before its bounded retry. */
+    int budget=cmd==ZP_CMD_ID?25000:10000;
     int err=bluetooth_read(c->fd,header,4,budget);
     if(err)goto failed;
     if(header[0]) {
@@ -49,7 +51,7 @@ static int bluetooth_xfer(zp_conn *c,const uint8_t *payload,size_t len,uint8_t c
         goto failed;
     }
     size_t n=((size_t)header[2]<<8)|header[3];if(n>cap)goto failed;
-    if(bluetooth_read(c->fd,out,n,1000))goto failed;
+    if(bluetooth_read(c->fd,out,n,5000))goto failed;
     if(rsp)*rsp=header[1];
     if(count)*count=n;
     return ZP_OK;

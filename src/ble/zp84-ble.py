@@ -94,7 +94,7 @@ async def known_devices():
         bus.disconnect()
 
 
-RESPONSE_TIMEOUT = 1.5
+RESPONSE_TIMEOUT = 2.0
 
 stage = 51  # Startup diagnostics carried over IPC to the GUI.
 
@@ -123,6 +123,26 @@ async def run():
             for item in parser.feed(data):
                 queue.put_nowait(item)
 
+        async def reconnect():
+            nonlocal write, notify
+            try:
+                if client.is_connected:
+                    await client.disconnect()
+                await asyncio.sleep(0.2)
+                await asyncio.wait_for(client.connect(), timeout=8)
+                write = client.services.get_characteristic(write_uuid)
+                notify = client.services.get_characteristic(notify_uuid)
+                if not write or "write-without-response" not in write.properties or not notify or "notify" not in notify.properties:
+                    raise RuntimeError("Vendor GATT characteristics missing after reconnect")
+                await client.start_notify(notify, received)
+                parser.buffer.clear()
+                while not queue.empty():
+                    queue.get_nowait()
+                return True
+            except Exception as error:
+                print("Bluetooth: GATT reconnect failed: " + str(error), file=sys.stderr)
+                return False
+
         stage = 54
         await client.start_notify(notify, received)
 
@@ -130,7 +150,8 @@ async def run():
 
         async def exchange(command, payload):
             nonlocal last_send
-            attempts = 3 if command == 6 else 1  # Never replay a write.
+            attempts = 3 if command == 6 else 1  # Reads are safe to retry; never replay writes.
+            reconnected = False
             ids = [payload[i:i+2] for i in range(0, len(payload), 2)]
             for attempt in range(attempts):
                 # A stale partial notification must not poison the next request.
@@ -139,8 +160,6 @@ async def run():
                     queue.get_nowait()
                 await asyncio.sleep(max(0, 0.03 - (asyncio.get_running_loop().time() - last_send)))
                 last_send = asyncio.get_running_loop().time()
-                await client.write_gatt_char(write, pack(command, payload), response=False)
-
                 async def response():
                     records = {}
                     while True:
@@ -159,12 +178,26 @@ async def run():
                             if all(key in records for key in ids):
                                 return b"".join(records[key] for key in ids)
                 try:
+                    await client.write_gatt_char(write, pack(command, payload), response=False)
                     return await asyncio.wait_for(response(), RESPONSE_TIMEOUT)
                 except TimeoutError:
                     print("Bluetooth: query timeout command=%02x attempt=%d" % (command, attempt+1), file=sys.stderr)
-                    if attempt + 1 == attempts:
+                except Exception as error:
+                    if command != 6:
                         raise
+                    print("Bluetooth: query failed command=%02x attempt=%d: %s" % (command, attempt+1, error), file=sys.stderr)
+
+                if command != 6:
+                    raise TimeoutError
+                if not client.is_connected:
+                    if reconnected or not await reconnect():
+                        raise ConnectionError("BLE link disconnected during DSP read")
+                    reconnected = True
+                if attempt + 1 < attempts:
                     await asyncio.sleep(0.15)
+            if not client.is_connected and not reconnected and not await reconnect():
+                raise ConnectionError("BLE link disconnected during DSP read")
+            raise TimeoutError
 
         stage = 55
         await exchange(6, b"\x00\x00")  # Verify DSP before reporting connected.

@@ -29,6 +29,9 @@ perangkat bernama Mango3.0 ditemukan, aplikasi menolak memilih secara acak.
 - Hanya query parameter 0x06 dan write parameter 0x03 diteruskan. Write tetap
   melalui acknowledgement dan pembacaan ulang independen pada `zp_id_write`.
   Tidak ada retry otomatis pada write yang timeout.
+- Query baca yang kehilangan notifikasi dicoba ulang. Jika GATT putus di tengah
+  pembacaan, worker mencoba menyambungkan ulang sekali dan mengulang query baca
+  yang sama; write tetap tidak diulang karena hasilnya bisa ambigu.
 - Proteksi speaker, preset, Link Pairs, serta lock desktop/web tetap berlaku
   karena semua kontrol memakai fungsi pengiriman yang sama.
 - Disconnect/error menutup worker dan transport. Pilih Disconnect lalu
